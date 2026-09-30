@@ -23,6 +23,9 @@ const envSchema = z.object({
   // Default: 3 requests per second per client
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(1000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  // Optional: set to share rate limit state across instances (Redis or Valkey)
+  REDIS_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
+  REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(200),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 });
 
@@ -52,6 +55,10 @@ const config = Object.freeze({
     ipv6Subnet: env.RATE_LIMIT_IPV6_SUBNET,
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX,
+  },
+  redis: {
+    url: env.REDIS_URL,
+    commandTimeoutMs: env.REDIS_COMMAND_TIMEOUT_MS,
   },
   shutdownTimeoutMs: env.SHUTDOWN_TIMEOUT_MS,
 });

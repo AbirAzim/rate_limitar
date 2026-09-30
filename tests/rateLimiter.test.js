@@ -8,63 +8,151 @@ import {
   createRateLimiter,
   ipToKey,
 } from '../src/lib/rateLimiter/index.js';
+import { connectTestRedis, deleteKeys, testPrefix } from './helpers/redis.js';
 
 const WINDOW = 1000;
 const MAX = 5;
 const created = [];
 
-const make = (name, opts = {}) => {
-  const limiter = createAlgorithm(name, { windowMs: WINDOW, max: MAX, ...opts });
-  created.push(limiter);
-  return limiter;
-};
+const redis = await connectTestRedis();
+const redisPrefix = testPrefix();
+
+after(async () => {
+  created.forEach((l) => l.stop());
+  if (redis) {
+    await deleteKeys(redis, redisPrefix);
+    await redis.quit();
+  }
+});
 
 // Fire `n` requests at time `t`, return how many were allowed
-const burst = (limiter, n, t, key = 'k') => {
+const burst = async (limiter, n, t, key = 'k') => {
   let allowed = 0;
-  for (let i = 0; i < n; i += 1) if (limiter.consume(key, t).allowed) allowed += 1;
+  for (let i = 0; i < n; i += 1) if ((await limiter.consume(key, t)).allowed) allowed += 1;
   return allowed;
 };
 
-after(() => created.forEach((l) => l.stop()));
+/**
+ * The same behavioral tests run against every store, proving the Redis Lua
+ * scripts behave exactly like the in-memory algorithms.
+ */
+const algorithmSuite = (store, makeLimiter) => {
+  let n = 0;
+  // Fresh key namespace per limiter so tests don't share state
+  const make = (name) => makeLimiter(name, `${(n += 1)}:`);
 
-describe('all algorithms (common contract)', () => {
+  describe(`[${store}] all algorithms (common contract)`, () => {
+    for (const name of Object.keys(ALGORITHMS)) {
+      describe(name, () => {
+        it('allows up to max, then rejects', async () => {
+          const l = make(name);
+          assert.equal(await burst(l, MAX + 3, 0), MAX);
+          const res = await l.consume('k', 0);
+          assert.equal(res.allowed, false);
+          assert.equal(res.remaining, 0);
+          assert.ok(res.resetMs > 0);
+        });
+
+        it('tracks keys independently', async () => {
+          const l = make(name);
+          assert.equal(await burst(l, MAX, 0, 'a'), MAX);
+          assert.equal((await l.consume('b', 0)).allowed, true);
+        });
+
+        it('recovers after enough time passes', async () => {
+          const l = make(name);
+          await burst(l, MAX, 0);
+          assert.equal((await l.consume('k', 0)).allowed, false);
+          assert.equal((await l.consume('k', 3 * WINDOW)).allowed, true);
+        });
+
+        it('decrements remaining', async () => {
+          const l = make(name);
+          assert.equal((await l.consume('k', 0)).remaining, MAX - 1);
+          assert.equal((await l.consume('k', 0)).remaining, MAX - 2);
+        });
+      });
+    }
+  });
+
+  describe(`[${store}] boundary behavior (why the algorithms differ)`, () => {
+    // max at the end of one window, then max at the start of the next
+    const edgeBurst = async (name) => {
+      const l = make(name);
+      return (await burst(l, MAX, WINDOW - 1)) + (await burst(l, MAX, WINDOW));
+    };
+
+    it('fixed-window lets 2x max through at the boundary', async () => {
+      assert.equal(await edgeBurst('fixed-window'), 2 * MAX);
+    });
+
+    it('sliding-window-log never exceeds max within any window', async () => {
+      assert.equal(await edgeBurst('sliding-window-log'), MAX);
+    });
+
+    it('sliding-window-counter smooths the boundary burst', async () => {
+      assert.equal(await edgeBurst('sliding-window-counter'), MAX);
+    });
+
+    it('token-bucket refills gradually', async () => {
+      const l = make('token-bucket');
+      await burst(l, MAX, 0);
+      // One token refills every WINDOW / MAX = 200ms
+      assert.equal((await l.consume('k', 199)).allowed, false);
+      assert.equal((await l.consume('k', 200)).allowed, true);
+      assert.equal((await l.consume('k', 200)).allowed, false);
+    });
+
+    it('leaky-bucket queues a burst and releases it at a constant rate', async () => {
+      const l = make('leaky-bucket');
+      // Leak interval = WINDOW / MAX = 200ms
+      const delays = [];
+      for (let i = 0; i < MAX; i += 1) delays.push((await l.consume('k', 0)).delayMs);
+      assert.deepEqual(delays, [0, 200, 400, 600, 800]);
+
+      const full = await l.consume('k', 0);
+      assert.equal(full.allowed, false);
+      assert.equal(full.resetMs, 200); // one slot leaks after 200ms
+
+      const next = await l.consume('k', 200);
+      assert.equal(next.allowed, true);
+      assert.equal(next.delayMs, 800); // queued behind the 4 still waiting
+    });
+
+    it('sliding-window-log frees a slot exactly when the oldest request expires', async () => {
+      const l = make('sliding-window-log');
+      await l.consume('k', 0);
+      await burst(l, MAX - 1, 500);
+      const rejected = await l.consume('k', 600);
+      assert.equal(rejected.allowed, false);
+      assert.equal(rejected.resetMs, 400);
+      assert.equal((await l.consume('k', 1000)).allowed, true);
+    });
+  });
+};
+
+algorithmSuite('memory', (name) => {
+  const limiter = createAlgorithm(name, { windowMs: WINDOW, max: MAX });
+  created.push(limiter);
+  return limiter;
+});
+
+if (redis) {
+  algorithmSuite('redis', (name, ns) =>
+    createAlgorithm(name, { windowMs: WINDOW, max: MAX, redis, prefix: redisPrefix + ns }),
+  );
+} else {
+  it('[redis] algorithm suite', { skip: 'no Redis at REDIS_TEST_URL / localhost:6379' });
+}
+
+describe('[memory] cleanup', () => {
   for (const name of Object.keys(ALGORITHMS)) {
-    describe(name, () => {
-      it('allows up to max, then rejects', () => {
-        const l = make(name);
-        assert.equal(burst(l, MAX + 3, 0), MAX);
-        const res = l.consume('k', 0);
-        assert.equal(res.allowed, false);
-        assert.equal(res.remaining, 0);
-        assert.ok(res.resetMs > 0);
-      });
-
-      it('tracks keys independently', () => {
-        const l = make(name);
-        assert.equal(burst(l, MAX, 0, 'a'), MAX);
-        assert.equal(l.consume('b', 0).allowed, true);
-      });
-
-      it('recovers after enough time passes', () => {
-        const l = make(name);
-        burst(l, MAX, 0);
-        assert.equal(l.consume('k', 0).allowed, false);
-        assert.equal(l.consume('k', 3 * WINDOW).allowed, true);
-      });
-
-      it('decrements remaining', () => {
-        const l = make(name);
-        assert.equal(l.consume('k', 0).remaining, MAX - 1);
-        assert.equal(l.consume('k', 0).remaining, MAX - 2);
-      });
-
-      it('sweep evicts stale keys', () => {
-        const l = make(name);
-        l.consume('k', 0);
-        l.sweep(10 * WINDOW);
-        assert.equal(l.store.size, 0);
-      });
+    it(`${name}: sweep evicts stale keys`, () => {
+      const l = createAlgorithm(name, { windowMs: WINDOW, max: MAX });
+      created.push(l);
+      l.consume('k', 0);
+      l.sweep(10 * WINDOW);
+      assert.equal(l.store.size, 0);
     });
   }
 
@@ -73,57 +161,63 @@ describe('all algorithms (common contract)', () => {
   });
 });
 
-describe('boundary behavior (why the algorithms differ)', () => {
-  // max at the end of one window, then max at the start of the next
-  const edgeBurst = (name) => {
-    const l = make(name);
-    return burst(l, MAX, WINDOW - 1) + burst(l, MAX, WINDOW);
-  };
+describe('[redis] store behavior', { skip: !redis && 'no Redis available' }, () => {
+  it('shares state between limiter instances (like multiple app servers)', async () => {
+    const opts = { windowMs: 60_000, max: 3, redis, prefix: `${redisPrefix}shared:` };
+    const serverA = createAlgorithm('sliding-window-counter', opts);
+    const serverB = createAlgorithm('sliding-window-counter', opts);
 
-  it('fixed-window lets 2x max through at the boundary', () => {
-    assert.equal(edgeBurst('fixed-window'), 2 * MAX);
+    assert.equal((await serverA.consume('ip')).allowed, true);
+    assert.equal((await serverB.consume('ip')).allowed, true);
+    assert.equal((await serverA.consume('ip')).allowed, true);
+    assert.equal((await serverB.consume('ip')).allowed, false); // 4th overall
   });
 
-  it('sliding-window-log never exceeds max within any window', () => {
-    assert.equal(edgeBurst('sliding-window-log'), MAX);
+  it('sets a TTL so Redis cleans up keys itself', async () => {
+    const prefix = `${redisPrefix}ttl:`;
+    const l = createAlgorithm('token-bucket', { windowMs: 5000, max: 5, redis, prefix });
+    await l.consume('ip');
+    const ttl = await redis.pttl(`${prefix}token-bucket:ip`);
+    assert.ok(ttl > 0 && ttl <= 5000, `expected TTL, got ${ttl}`);
   });
 
-  it('sliding-window-counter smooths the boundary burst', () => {
-    assert.equal(edgeBurst('sliding-window-counter'), MAX);
+  it('is atomic under concurrent requests', async () => {
+    const l = createAlgorithm('fixed-window', {
+      windowMs: 60_000,
+      max: 10,
+      redis,
+      prefix: `${redisPrefix}race:`,
+    });
+    const results = await Promise.all(Array.from({ length: 50 }, () => l.consume('ip')));
+    assert.equal(results.filter((r) => r.allowed).length, 10);
   });
+});
 
-  it('token-bucket refills gradually', () => {
-    const l = make('token-bucket');
-    burst(l, MAX, 0);
-    // One token refills every WINDOW / MAX = 200ms
-    assert.equal(l.consume('k', 199).allowed, false);
-    assert.equal(l.consume('k', 200).allowed, true);
-    assert.equal(l.consume('k', 200).allowed, false);
-  });
+describe('fail open', () => {
+  it('allows requests when the store is down', async () => {
+    const errors = [];
+    const brokenRedis = {
+      defineCommand() {},
+      rateLimit_fixed_window: async () => {
+        throw new Error('Connection is closed.');
+      },
+    };
+    const app = express();
+    app.use(
+      createRateLimiter({
+        algorithm: 'fixed-window',
+        windowMs: 1000,
+        max: 1,
+        redis: brokenRedis,
+        onLimitReached: (req, res) => res.status(429).end(),
+        onStoreError: (err) => errors.push(err.message),
+      }),
+    );
+    app.get('/', (req, res) => res.end());
 
-  it('leaky-bucket queues a burst and releases it at a constant rate', () => {
-    const l = make('leaky-bucket');
-    // Leak interval = WINDOW / MAX = 200ms
-    const delays = [0, 1, 2, 3, 4].map(() => l.consume('k', 0).delayMs);
-    assert.deepEqual(delays, [0, 200, 400, 600, 800]);
-
-    const full = l.consume('k', 0);
-    assert.equal(full.allowed, false);
-    assert.equal(full.resetMs, 200); // one slot leaks after 200ms
-
-    const next = l.consume('k', 200);
-    assert.equal(next.allowed, true);
-    assert.equal(next.delayMs, 800); // queued behind the 4 still waiting
-  });
-
-  it('sliding-window-log frees a slot exactly when the oldest request expires', () => {
-    const l = make('sliding-window-log');
-    l.consume('k', 0);
-    burst(l, MAX - 1, 500);
-    const rejected = l.consume('k', 600);
-    assert.equal(rejected.allowed, false);
-    assert.equal(rejected.resetMs, 400);
-    assert.equal(l.consume('k', 1000).allowed, true);
+    await request(app).get('/').expect(200);
+    await request(app).get('/').expect(200);
+    assert.deepEqual(errors, ['Connection is closed.', 'Connection is closed.']);
   });
 });
 

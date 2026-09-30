@@ -3,6 +3,7 @@ import LeakyBucket from './algorithms/LeakyBucket.js';
 import SlidingWindowCounter from './algorithms/SlidingWindowCounter.js';
 import SlidingWindowLog from './algorithms/SlidingWindowLog.js';
 import TokenBucket from './algorithms/TokenBucket.js';
+import RedisAlgorithm from './redis/RedisAlgorithm.js';
 import { ipToKey } from './ipKey.js';
 
 export { ipToKey };
@@ -15,7 +16,13 @@ export const ALGORITHMS = Object.freeze({
   'leaky-bucket': LeakyBucket,
 });
 
-export const createAlgorithm = (name, options) => {
+/**
+ * Returns the Redis-backed version when a redis client is given,
+ * otherwise the in-memory one. Both expose `consume(key) -> { allowed, ... }`.
+ */
+export const createAlgorithm = (name, { redis, ...options }) => {
+  if (redis) return new RedisAlgorithm(name, { redis, ...options });
+
   const Algorithm = ALGORITHMS[name];
   if (!Algorithm) {
     throw new Error(
@@ -35,6 +42,8 @@ export const createAlgorithm = (name, options) => {
  * @param {(req) => string} [options.keyGenerator]  Defaults to normalized client IP
  * @param {number} [options.ipv6Subnet]  IPv6 prefix length used to group addresses (default 64)
  * @param {(req, res, next, info) => void} options.onLimitReached  Called when rejected
+ * @param {import('ioredis').Redis} [options.redis]  Shared store; omit for in-memory
+ * @param {(err, req) => void} [options.onStoreError]  Store failed; request is allowed (fail open)
  */
 export const createRateLimiter = ({
   algorithm,
@@ -43,12 +52,24 @@ export const createRateLimiter = ({
   ipv6Subnet = 64,
   keyGenerator = (req) => ipToKey(req.ip, ipv6Subnet),
   onLimitReached,
+  redis,
+  onStoreError = () => {},
 }) => {
-  const limiter = createAlgorithm(algorithm, { windowMs, max });
+  const limiter = createAlgorithm(algorithm, { windowMs, max, redis });
 
-  const middleware = (req, res, next) => {
+  const middleware = async (req, res, next) => {
     const key = keyGenerator(req);
-    const { allowed, remaining, resetMs, delayMs = 0 } = limiter.consume(key);
+
+    let result;
+    try {
+      result = await limiter.consume(key);
+    } catch (err) {
+      // Fail open: a store outage shouldn't take the whole API down
+      onStoreError(err, req);
+      return next();
+    }
+
+    const { allowed, remaining, resetMs, delayMs = 0 } = result;
     const resetSeconds = Math.max(1, Math.ceil(resetMs / 1000));
 
     // IETF RateLimit header fields (draft-ietf-httpapi-ratelimit-headers)

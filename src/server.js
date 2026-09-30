@@ -1,5 +1,6 @@
 import createApp from './app.js';
 import config from './config/index.js';
+import { closeRedis } from './lib/redis.js';
 import logger from './utils/logger.js';
 
 const app = createApp();
@@ -17,12 +18,14 @@ const shutdown = (signal, exitCode = 0) => {
   shuttingDown = true;
   logger.info(`${signal} received, shutting down gracefully`);
 
-  server.close((err) => {
+  server.close(async (err) => {
     if (err) {
       logger.error('Error while closing server', { error: err.message });
       process.exit(1);
     }
     logger.info('HTTP server closed');
+    // After in-flight requests finish, so none of them lose their Redis connection
+    await closeRedis();
     process.exit(exitCode);
   });
 

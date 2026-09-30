@@ -8,3 +8,4 @@ coverage
 .claude
 Dockerfile
 .dockerignore
+docker-compose.yml

@@ -1,0 +1,60 @@
+services:
+  api:
+    build: .
+    image: rate_limitar
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: 0 # set to 1+ when running behind nginx / a load balancer
+      RATE_LIMIT_ALGORITHM: sliding-window-counter
+      RATE_LIMIT_WINDOW_MS: 1000
+      RATE_LIMIT_MAX: 3
+      # Rate limit state lives in Valkey, shared by every api instance.
+      # Remove to fall back to in-memory state.
+      REDIS_URL: redis://valkey:6379
+      # Keep Node's heap below the container memory cap
+      NODE_OPTIONS: --max-old-space-size=384
+    depends_on:
+      valkey:
+        condition: service_healthy # wait until Valkey answers PING
+    mem_limit: 512m
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    # Rate limit counters are short-lived, so persistence is disabled (no disk writes).
+    # maxmemory caps Valkey's own usage; allkeys-lru evicts least recently used keys when full.
+    command: >
+      valkey-server
+      --save ""
+      --appendonly no
+      --maxmemory 100mb
+      --maxmemory-policy allkeys-lru
+    # No "ports:" on purpose: only the api container reaches Valkey, over the
+    # private compose network. To inspect it from your Mac, temporarily add:
+    #   ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    mem_limit: 128m
+    logging: *default-logging
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5540:5540'
+    depends_on:
+      - valkey
+    mem_limit: 256m
+    logging: *default-logging

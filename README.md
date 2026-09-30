@@ -79,10 +79,33 @@ to reset their limit. Set `TRUST_PROXY` to the number of proxies in front of the
 is the real client IP and `X-Forwarded-For` can't be spoofed.
 
 Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `RateLimit-Policy`,
-and `Retry-After` on 429. State is in-memory per process; for multiple instances, back the
-algorithms with a shared store (e.g. Redis) instead of the `Map`.
+and `Retry-After` on 429.
+
+### Store: memory or Redis/Valkey
+
+| `REDIS_URL` | Store                                  | Use when                                    |
+| ----------- | -------------------------------------- | ------------------------------------------- |
+| unset       | In-memory `Map` per process            | Single instance, local dev                  |
+| set         | Redis/Valkey, shared by every instance | Multiple instances, limits survive restarts |
+
+- Each algorithm has a Lua script in `src/lib/rateLimiter/redis/scripts/`, so read-check-update
+  is atomic across instances, and uses the Redis server clock so instances agree on time.
+- Keys look like `ratelimit:<algorithm>:<ip>` and expire on their own (TTL).
+- **Fails open**: if Redis is down or slower than `REDIS_COMMAND_TIMEOUT_MS` (default 200ms),
+  requests are allowed and an error is logged.
+- `GET /health` shows `rateLimitStore` and the Redis connection status.
+- Tests run the same suite against both stores; Redis tests use `REDIS_TEST_URL`
+  (default `redis://localhost:6379`) and are skipped if it's unreachable.
 
 ## Docker
+
+With Valkey (recommended, shared rate limit store):
+
+```bash
+docker compose up --build
+```
+
+Standalone:
 
 ```bash
 docker build -t rate_limitar .
