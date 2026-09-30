@@ -20,12 +20,9 @@ const envSchema = z.object({
   // Number of reverse proxies in front of the app (0 = exposed directly).
   // Must match your infra, otherwise clients can spoof X-Forwarded-For.
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
-  RATE_LIMIT_WINDOW_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(15 * 60 * 1000),
-  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  // Default: 3 requests per second per client
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(1000),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 });
 
