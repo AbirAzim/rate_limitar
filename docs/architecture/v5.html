@@ -1,0 +1,302 @@
+
+  <header>
+    <span class="eyebrow">rate_limitar · production layout</span>
+    <h1>Two teams, two stacks: the blog gets its own Valkey and S3 for images</h1>
+    <p class="lede">
+      The REST team and the blog team each own their own cache, their own database and their own
+      deploys. Blog images live in S3 and reach readers through CloudFront, so neither MongoDB
+      nor Valkey ever holds image bytes, and cached posts stay small.
+    </p>
+    <p class="builds-on">
+      Builds on <a href="#v4">v4</a>. Unchanged: one Cognito login, AppSync with Lambda resolvers,
+      the REST path and rate limiter, and MongoDB replication.
+    </p>
+  </header>
+
+  <!-- 1. Ownership -->
+  <section>
+    <h2>Who owns what</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 740" role="img" aria-label="Shared platform on top: Cognito and CloudFront with WAF. The REST team owns the API gateway, the Express servers and Valkey rest. The blog team owns AppSync, the blog Lambdas, Valkey blog, the S3 bucket blog-media and an image processor Lambda. CloudFront serves images from S3. Both teams use one shared MongoDB Atlas cluster, each with its own database.">
+          <defs>
+            <marker id="h7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Shared platform -->
+          <text x="40" y="18" class="t-label">shared platform</text>
+          <rect class="managed" x="40" y="28" width="260" height="72" rx="10" />
+          <text x="170" y="56" text-anchor="middle" class="t-title">Amazon Cognito</text>
+          <text x="170" y="78" text-anchor="middle" class="t-mono">one login for both teams</text>
+
+          <rect class="managed" x="350" y="28" width="260" height="72" rx="10" />
+          <text x="480" y="56" text-anchor="middle" class="t-title">CloudFront + WAF</text>
+          <text x="480" y="78" text-anchor="middle" class="t-mono">api. · blog. · media.domain.com</text>
+
+          <!-- Team columns -->
+          <rect x="30" y="126" width="440" height="440" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 5" />
+          <text x="46" y="150" class="t-label">REST team</text>
+          <rect x="490" y="126" width="440" height="440" rx="14" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 5" />
+          <text x="506" y="150" class="t-label t-accent">blog team</text>
+
+          <!-- Edge to services -->
+          <line class="edge" x1="420" y1="100" x2="258" y2="176" marker-end="url(#h7)" />
+          <text x="326" y="128" text-anchor="end" class="t-label">api.</text>
+          <line class="edge-accent" x1="540" y1="100" x2="702" y2="176" marker-end="url(#ha7)" />
+          <text x="636" y="128" class="t-label t-accent">blog./graphql</text>
+
+          <!-- Images from S3 via CloudFront -->
+          <polyline class="edge-accent" points="610,64 945,64 945,398 912,398" marker-end="url(#ha7)" />
+          <text x="780" y="56" text-anchor="middle" class="t-label t-accent">images from S3</text>
+
+          <!-- REST column -->
+          <rect class="managed" x="50" y="178" width="390" height="52" rx="10" />
+          <text x="245" y="202" text-anchor="middle" class="t-title">API gateway</text>
+          <text x="245" y="220" text-anchor="middle" class="t-mono">JWT authorizer</text>
+          <line class="edge" x1="245" y1="230" x2="245" y2="266" marker-end="url(#h7)" />
+          <rect class="own" x="50" y="268" width="390" height="62" rx="10" />
+          <text x="245" y="294" text-anchor="middle" class="t-title">Express · servers A, B, C</text>
+          <text x="245" y="314" text-anchor="middle" class="t-mono">behind the load balancer</text>
+          <line class="edge" x1="175" y1="330" x2="175" y2="368" marker-end="url(#h7)" />
+          <rect class="managed" x="50" y="370" width="250" height="70" rx="10" />
+          <text x="175" y="396" text-anchor="middle" class="t-title">Valkey "rest"</text>
+          <text x="175" y="416" text-anchor="middle" class="t-mono">rate limits · REST cache</text>
+          <line class="edge" x1="380" y1="330" x2="380" y2="612" marker-end="url(#h7)" />
+
+          <!-- Blog column -->
+          <rect class="hl" x="510" y="178" width="400" height="52" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="202" text-anchor="middle" class="t-title">AppSync</text>
+          <text x="710" y="220" text-anchor="middle" class="t-mono">GraphQL · Cognito auth · WAF</text>
+          <line class="edge-accent" x1="710" y1="230" x2="710" y2="266" marker-end="url(#ha7)" />
+          <rect class="hl" x="510" y="268" width="400" height="62" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="294" text-anchor="middle" class="t-title">Blog Lambdas</text>
+          <text x="710" y="314" text-anchor="middle" class="t-mono">resolvers · signs upload URLs</text>
+
+          <line class="edge-accent" x1="610" y1="330" x2="610" y2="368" marker-end="url(#ha7)" />
+          <rect class="hl" x="510" y="370" width="200" height="70" rx="10" style="stroke-dasharray:6 4" />
+          <text x="610" y="396" text-anchor="middle" class="t-title">Valkey "blog"</text>
+          <text x="610" y="416" text-anchor="middle" class="t-mono">post cache · limits</text>
+          <text x="610" y="432" text-anchor="middle" class="t-mono">view counters</text>
+
+          <line class="edge-accent" x1="820" y1="330" x2="820" y2="368" marker-end="url(#ha7)" />
+          <text x="828" y="354" class="t-label t-accent">signed URL</text>
+          <rect class="hl" x="730" y="370" width="180" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="820" y="394" text-anchor="middle" class="t-title">S3 blog-media</text>
+          <text x="820" y="414" text-anchor="middle" class="t-mono">private bucket</text>
+
+          <line class="edge-accent" x1="800" y1="426" x2="800" y2="474" marker-end="url(#ha7)" />
+          <line class="edge-accent" x1="840" y1="474" x2="840" y2="428" marker-end="url(#ha7)" />
+          <text x="792" y="456" text-anchor="end" class="t-label t-accent">new upload</text>
+          <text x="848" y="456" class="t-label t-accent">resized</text>
+          <rect class="hl" x="730" y="476" width="180" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="820" y="500" text-anchor="middle" class="t-title">Image processor</text>
+          <text x="820" y="520" text-anchor="middle" class="t-mono">Lambda · webp sizes</text>
+
+          <line class="edge-accent" x1="720" y1="330" x2="720" y2="612" marker-end="url(#ha7)" />
+
+          <!-- Shared Atlas cluster -->
+          <text x="40" y="596" class="t-label">shared platform</text>
+          <rect class="managed" x="40" y="614" width="880" height="84" rx="10" />
+          <text x="480" y="638" text-anchor="middle" class="t-title">MongoDB Atlas · one cluster</text>
+          <rect class="inner" x="60" y="650" width="400" height="34" rx="6" />
+          <text x="260" y="672" text-anchor="middle" class="t-mono" style="fill:var(--ink)">database app · REST team's DB user</text>
+          <rect class="hl" x="500" y="650" width="400" height="34" rx="6" />
+          <text x="700" y="672" text-anchor="middle" class="t-mono" style="fill:var(--ink)">database blog · blog team's DB user</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="716" width="26" height="12" rx="3" />
+          <text x="74" y="727" class="t-label">your servers</text>
+          <rect class="managed" x="190" y="716" width="26" height="12" rx="3" />
+          <text x="224" y="727" class="t-label">managed service</text>
+          <rect class="hl" x="370" y="716" width="26" height="12" rx="3" />
+          <text x="404" y="727" class="t-label">blog team, new or changed in v5</text>
+        </svg>
+      </div>
+      <figcaption>
+        Each team can deploy, scale and change its own column without asking the other. What
+        they share is kept deliberately small: the login, the edge, and the Atlas cluster, where each
+        team has its own database and its own database user. The blog Lambdas have no credentials
+        for Valkey "rest" or the <code>app</code> database, and the REST servers have none for the
+        blog's.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 2. Image uploads -->
+  <section>
+    <h2>How an image gets into a post</h2>
+    <p>
+      Image bytes never pass through AppSync or Lambda. AppSync requests are capped at a few
+      megabytes and Lambda payloads at 6 MB, and pushing files through them costs time and money.
+      Instead the Lambda hands the browser a short-lived, single-purpose upload link, and the
+      browser sends the file straight to S3.
+    </p>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 470" role="img" aria-label="Sequence: the client asks AppSync for an upload link and receives a presigned S3 URL valid for 5 minutes. It uploads the image directly to S3. S3 triggers the image processor, which writes resized webp versions back to S3. The client then creates the post with the image keys. Readers load images from CloudFront, which only goes to S3 on an edge cache miss.">
+          <defs>
+            <marker id="h8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lane headers -->
+          <rect class="own" x="30" y="16" width="120" height="40" rx="8" />
+          <text x="90" y="41" text-anchor="middle" class="t-title">client</text>
+          <rect class="hl" x="200" y="16" width="200" height="40" rx="8" />
+          <text x="300" y="41" text-anchor="middle" class="t-title">AppSync + blog Lambda</text>
+          <rect class="hl" x="440" y="16" width="160" height="40" rx="8" />
+          <text x="520" y="41" text-anchor="middle" class="t-title">S3 blog-media</text>
+          <rect class="hl" x="640" y="16" width="160" height="40" rx="8" />
+          <text x="720" y="41" text-anchor="middle" class="t-title">image processor</text>
+          <rect class="managed" x="830" y="16" width="120" height="40" rx="8" />
+          <text x="890" y="41" text-anchor="middle" class="t-title">CloudFront</text>
+
+          <line x1="90" y1="56" x2="90" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="300" y1="56" x2="300" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="520" y1="56" x2="520" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="720" y1="56" x2="720" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="890" y1="56" x2="890" y2="452" stroke="var(--line)" stroke-width="1.5" />
+
+          <!-- ① ② upload link -->
+          <line class="edge" x1="90" y1="90" x2="296" y2="90" marker-end="url(#h8)" />
+          <text x="195" y="82" text-anchor="middle" class="t-label">① createImageUpload</text>
+          <line class="edge" x1="300" y1="124" x2="94" y2="124" marker-end="url(#h8)" />
+          <text x="195" y="144" text-anchor="middle" class="t-label">② signed PUT URL · 5 min</text>
+          <text x="195" y="159" text-anchor="middle" class="t-label">image/* only · ≤ 10 MB</text>
+
+          <!-- ③ direct upload -->
+          <line class="edge-accent" x1="90" y1="190" x2="516" y2="190" marker-end="url(#ha8)" />
+          <text x="305" y="182" text-anchor="middle" class="t-label t-accent">③ PUT image bytes straight to S3</text>
+          <text x="530" y="212" class="t-label">uploads/{postId}/{uuid}</text>
+
+          <!-- ④ ⑤ processing -->
+          <line class="edge" x1="520" y1="240" x2="716" y2="240" marker-end="url(#h8)" />
+          <text x="620" y="232" text-anchor="middle" class="t-label">④ upload event</text>
+          <line class="edge" x1="720" y1="274" x2="524" y2="274" marker-end="url(#h8)" />
+          <text x="620" y="294" text-anchor="middle" class="t-label">⑤ webp 400 · 800 · 1600</text>
+          <text x="620" y="309" text-anchor="middle" class="t-label">to media/</text>
+
+          <!-- ⑥ create post -->
+          <line class="edge" x1="90" y1="344" x2="296" y2="344" marker-end="url(#h8)" />
+          <text x="195" y="336" text-anchor="middle" class="t-label">⑥ createPost { imageKeys }</text>
+          <text x="310" y="366" class="t-label">post stores keys, not bytes</text>
+
+          <!-- ⑦ reading -->
+          <line class="edge-accent" x1="90" y1="404" x2="886" y2="404" marker-end="url(#ha8)" />
+          <text x="490" y="396" text-anchor="middle" class="t-label t-accent">⑦ readers load media.domain.com/… (cached at the edge)</text>
+          <line class="edge" x1="890" y1="436" x2="524" y2="436" marker-end="url(#h8)" style="stroke-dasharray:5 4" />
+          <text x="707" y="430" text-anchor="middle" class="t-label">only on an edge cache miss</text>
+        </svg>
+      </div>
+      <figcaption>
+        The signed link allows exactly one upload, of one content type, up to a size limit, within
+        five minutes, to one key the server chose. The bucket itself stays private: readers can only
+        reach images through CloudFront (Origin Access Control), and resized files get
+        never-changing names, so CloudFront and browsers can cache them for a year.
+      </figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>S3 setting</th><th>Value</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Public access</td><td>Blocked</td><td>Only CloudFront (OAC) can read, only signed links can write</td></tr>
+          <tr><td><code>uploads/</code> lifecycle</td><td>Delete after 1 day</td><td>Originals from abandoned drafts don't pile up</td></tr>
+          <tr><td><code>media/</code> keys</td><td>Content-hashed names</td><td>Never overwritten, so they can be cached with <code>max-age=31536000, immutable</code></td></tr>
+          <tr><td>Processor failures</td><td>2 retries, then a dead-letter queue</td><td>A bad file doesn't block the rest; failures can be inspected and replayed</td></tr>
+          <tr><td>Post deleted</td><td>Delete its <code>media/{postId}/</code> prefix</td><td>No orphaned images</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Blog cache -->
+  <section>
+    <h2>What goes in Valkey "blog"</h2>
+    <p>
+      Because images live in S3, a cached post is only its text and metadata: a few kilobytes to a
+      few tens of kilobytes, even for long posts. Values are compressed before storing, and anything
+      above about 100 KB is better not cached at all, since large values slow every read of them.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Key</th><th>Holds</th><th>Typical size</th><th>Lifetime</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cache:post:{id}</code></td><td>Post text, title, tags, image keys (compressed JSON)</td><td>5–30 KB</td><td>10 min; deleted when the post is edited</td></tr>
+          <tr><td><code>cache:posts:latest:{page}</code></td><td>Summaries for the feed: title, excerpt, thumbnail key</td><td>~5 KB</td><td>60 s</td></tr>
+          <tr><td><code>ratelimit:{sub}:…</code></td><td>Per-user limits for GraphQL, same Lua scripts as REST</td><td>bytes</td><td>One window</td></tr>
+          <tr><td><code>counter:views:{id}</code></td><td>View count, <code>INCR</code> per read</td><td>bytes</td><td>No expiry; flushed to MongoDB every minute</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Eviction policy <code>volatile-lru</code>.</strong> When memory fills, Valkey only evicts
+      keys that have an expiry, oldest-used first. Cached posts go first and simply reload from
+      MongoDB; view counters have no expiry, so they are never dropped before they're saved.
+      Size the node so eviction is rare; the smallest node with a replica, or ElastiCache Serverless,
+      is enough to start.
+    </p>
+  </section>
+
+  <!-- 4. New failure cases -->
+  <section>
+    <h2>New ways things can fail</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Valkey "blog"</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Blog reads fall through to MongoDB (slower, more load); per-user GraphQL limits fall back to the WAF's per-IP rule. The REST API doesn't notice.</td>
+          </tr>
+          <tr>
+            <td>Valkey "rest"</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Only the REST API is affected, as in v1–v4. The blog doesn't notice.</td>
+          </tr>
+          <tr>
+            <td>Image processor</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>New images wait in <code>uploads/</code>; retries and the dead-letter queue catch up once it's fixed. Existing images and all text keep working.</td>
+          </tr>
+          <tr>
+            <td>S3 or CloudFront media</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Posts load without images. Images already cached at the edge or in browsers still show.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Work for this version -->
+  <section>
+    <h2>To build for v5</h2>
+    <div class="status">
+      <div class="planned">
+        <h3>Blog team</h3>
+        <ul>
+          <li>Valkey "blog" with <code>volatile-lru</code>, its own subnet and security group</li>
+          <li>Cache-aside for posts and the feed, deleted on edit</li>
+          <li>S3 <code>blog-media</code>: private, CloudFront OAC, lifecycle rule on <code>uploads/</code></li>
+          <li><code>createImageUpload</code> mutation returning a signed PUT URL</li>
+          <li>Image processor Lambda with retries and a dead-letter queue</li>
+        </ul>
+      </div>
+      <div class="planned">
+        <h3>Shared</h3>
+        <ul>
+          <li>Rate limit Lua scripts made cluster-safe with hash tags, so both teams can reuse them</li>
+          <li><code>media.domain.com</code> behavior in CloudFront pointing at the bucket</li>
+          <li>Separate Atlas database users per team</li>
+        </ul>
+      </div>
+    </div>
+  </section>

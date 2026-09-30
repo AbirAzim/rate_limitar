@@ -1,0 +1,59 @@
+[
+  {
+    "id": "v1",
+    "name": "Scale out",
+    "date": "2026-09-30",
+    "summary": "Weighted load balancer, three app servers, one shared Valkey, MongoDB Atlas.",
+    "changes": []
+  },
+  {
+    "id": "v2",
+    "name": "Edge protection",
+    "date": "2026-09-30",
+    "summary": "CDN and WAF at the edge, an API gateway, and rate limits split across layers.",
+    "changes": [
+      "Edge network with CDN and WAF in front of everything",
+      "API gateway with API keys and a coarse per-IP limit",
+      "\"Which layer limits what\" table, and the client IP through the proxy chain",
+      "Failure rows for the edge, gateway and load balancer services"
+    ]
+  },
+  {
+    "id": "v3",
+    "name": "Database fault tolerance",
+    "date": "2026-09-30",
+    "summary": "MongoDB replica set across three zones, oplog replication and automatic failover.",
+    "changes": [
+      "How a write reaches the other copies: primary, oplog, majority acknowledgement",
+      "Failover timeline: election in about 12 s, driver retries the write once",
+      "Driver settings: mongodb+srv, retryWrites, w: majority, read preference",
+      "Failure rows for losing the MongoDB primary or a secondary"
+    ]
+  },
+  {
+    "id": "v4",
+    "name": "Blog service, one login",
+    "date": "2026-09-30",
+    "summary": "Cognito sign-in shared by every service, and a GraphQL blog on AppSync and Lambda using its own database in the same cluster.",
+    "changes": [
+      "Amazon Cognito user pool: one sign-in, one token for REST and GraphQL",
+      "Blog service on AWS AppSync with Lambda resolvers",
+      "Separate blog database and DB user in the same Atlas cluster",
+      "GraphQL schema, resolver map and design decisions",
+      "Failure rows for Cognito, AppSync and the shared connection limit"
+    ]
+  },
+  {
+    "id": "v5",
+    "name": "Team stacks, blog media",
+    "date": "2026-09-30",
+    "summary": "Each team owns its own stack: the blog gets its own Valkey, and blog images go to S3 behind CloudFront.",
+    "changes": [
+      "Ownership split: REST team and blog team stacks, shared login, edge and cluster",
+      "Valkey \"blog\" for post cache, per-user limits and view counters",
+      "S3 blog-media with direct uploads through signed URLs, and an image processor",
+      "What's cached, how big it gets, and the eviction policy",
+      "Failure rows for each Valkey, the image processor and media delivery"
+    ]
+  }
+]

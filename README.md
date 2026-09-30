@@ -3,6 +3,22 @@
 Production-grade Express 5 CRUD template. No database — each service method logs the
 operation and returns JSON, so you can drop in a real data layer later.
 
+## Architecture
+
+[`docs/architecture.html`](docs/architecture.html) shows how the production design has evolved, one
+version per step, so you can compare where we started with where we're going:
+
+| Version | Adds                                                                |
+| ------- | ------------------------------------------------------------------- |
+| v1      | Weighted load balancer, 3 app servers, shared Valkey, MongoDB Atlas |
+| v2      | CDN + WAF, API gateway, rate limits split across layers             |
+| v3      | MongoDB replica set, oplog replication, automatic failover          |
+
+Open it with `open docs/architecture.html`. Versions live in `docs/architecture/vN.html`: v1–v3 are
+full snapshots, and from v4 on each version shows only what it adds and links to the one it builds on.
+To add one, write the next `vN.html` with just the changes, add it to `versions.json`, and run
+`python3 docs/architecture/build.py`.
+
 ## Quick start
 
 ```bash

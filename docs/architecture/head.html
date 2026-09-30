@@ -1,0 +1,139 @@
+<title>rate_limitar Topology</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f3;
+    --surface: #ffffff;
+    --surface-2: #e8ecea;
+    --ink: #17201d;
+    --muted: #5b6863;
+    --line: #aeb9b4;
+    --accent: #0b6e86;      /* shared state: Valkey path */
+    --accent-soft: #d6eaef;
+    --warn: #a35a0a;        /* fallback / degraded path */
+    --warn-soft: #f5e6d3;
+    --ok: #2f7a4a;
+    --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #111615;
+      --surface: #19201e;
+      --surface-2: #222b28;
+      --ink: #e4e9e6;
+      --muted: #97a39e;
+      --line: #4a5752;
+      --accent: #3fb3cf;
+      --accent-soft: #15333b;
+      --warn: #e2a256;
+      --warn-soft: #3a2a17;
+      --ok: #6cc38d;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #111615;
+    --surface: #19201e;
+    --surface-2: #222b28;
+    --ink: #e4e9e6;
+    --muted: #97a39e;
+    --line: #4a5752;
+    --accent: #3fb3cf;
+    --accent-soft: #15333b;
+    --warn: #e2a256;
+    --warn-soft: #3a2a17;
+    --ok: #6cc38d;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 40px 64px;
+  }
+  main { max-width: 1000px; margin: 0 auto; display: grid; gap: 56px; }
+
+  header { display: grid; gap: 10px; max-width: 68ch; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -.01em;
+  }
+  h2 {
+    font-family: var(--font-display); font-weight: 700; font-size: 22px;
+    margin: 0; text-wrap: balance;
+  }
+  p { margin: 0; max-width: 68ch; }
+  .lede { color: var(--muted); font-size: 16px; }
+  code, .mono { font-family: var(--font-mono); font-size: .88em; }
+
+  section { display: grid; gap: 16px; }
+
+  figure { margin: 0; display: grid; gap: 12px; }
+  .canvas {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; overflow-x: auto;
+  }
+  .canvas svg { display: block; width: 100%; height: auto; min-width: 640px; }
+  figcaption { color: var(--muted); font-size: 14px; max-width: 80ch; }
+
+  /* SVG vocabulary */
+  svg text { font-family: var(--font-body); font-size: 13px; fill: var(--ink); }
+  svg .t-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+  svg .t-mono { font-family: var(--font-mono); font-size: 11.5px; fill: var(--muted); }
+  svg .t-label { font-family: var(--font-mono); font-size: 11.5px; fill: var(--muted); }
+  svg .t-accent { fill: var(--accent); }
+  svg .t-warn { fill: var(--warn); }
+  svg .own { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+  svg .managed { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; }
+  svg .inner { fill: var(--surface-2); stroke: none; }
+  svg .hl { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  svg .hl-warn { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; }
+  svg .edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  svg .edge-accent { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  svg .edge-warn { stroke: var(--warn); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+  svg .bus { stroke: var(--line); stroke-width: 6; stroke-linecap: round; }
+  svg .head { fill: var(--muted); }
+  svg .head-accent { fill: var(--accent); }
+  svg .head-warn { fill: var(--warn); }
+
+  /* Failure table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 14px; vertical-align: top; border-bottom: 1px solid var(--surface-2); }
+  th {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted); background: var(--surface-2);
+  }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .pill {
+    display: inline-block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 500;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .pill.degraded { color: var(--warn); background: var(--warn-soft); }
+  .pill.down { color: #b42318; background: color-mix(in srgb, #b42318 12%, transparent); }
+  :root[data-theme="dark"] .pill.down { color: #f08a7e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.down { color: #f08a7e; } }
+
+  /* Status list */
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .status > div { border-top: 3px solid var(--line); padding-top: 12px; display: grid; gap: 8px; align-content: start; }
+  .status > div.built { border-top-color: var(--ok); }
+  .status > div.planned { border-top-color: var(--warn); }
+  .status h3 { margin: 0; font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+  .status ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+</style>
+

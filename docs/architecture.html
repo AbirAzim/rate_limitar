@@ -1,0 +1,2263 @@
+<!doctype html>
+<!-- Architecture history (generated). Open in a browser: `open docs/architecture.html` -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rate_limitar Topology</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f3;
+    --surface: #ffffff;
+    --surface-2: #e8ecea;
+    --ink: #17201d;
+    --muted: #5b6863;
+    --line: #aeb9b4;
+    --accent: #0b6e86;      /* shared state: Valkey path */
+    --accent-soft: #d6eaef;
+    --warn: #a35a0a;        /* fallback / degraded path */
+    --warn-soft: #f5e6d3;
+    --ok: #2f7a4a;
+    --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #111615;
+      --surface: #19201e;
+      --surface-2: #222b28;
+      --ink: #e4e9e6;
+      --muted: #97a39e;
+      --line: #4a5752;
+      --accent: #3fb3cf;
+      --accent-soft: #15333b;
+      --warn: #e2a256;
+      --warn-soft: #3a2a17;
+      --ok: #6cc38d;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #111615;
+    --surface: #19201e;
+    --surface-2: #222b28;
+    --ink: #e4e9e6;
+    --muted: #97a39e;
+    --line: #4a5752;
+    --accent: #3fb3cf;
+    --accent-soft: #15333b;
+    --warn: #e2a256;
+    --warn-soft: #3a2a17;
+    --ok: #6cc38d;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 40px 64px;
+  }
+  main { max-width: 1000px; margin: 0 auto; display: grid; gap: 56px; }
+
+  header { display: grid; gap: 10px; max-width: 68ch; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -.01em;
+  }
+  h2 {
+    font-family: var(--font-display); font-weight: 700; font-size: 22px;
+    margin: 0; text-wrap: balance;
+  }
+  p { margin: 0; max-width: 68ch; }
+  .lede { color: var(--muted); font-size: 16px; }
+  code, .mono { font-family: var(--font-mono); font-size: .88em; }
+
+  section { display: grid; gap: 16px; }
+
+  figure { margin: 0; display: grid; gap: 12px; }
+  .canvas {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; overflow-x: auto;
+  }
+  .canvas svg { display: block; width: 100%; height: auto; min-width: 640px; }
+  figcaption { color: var(--muted); font-size: 14px; max-width: 80ch; }
+
+  /* SVG vocabulary */
+  svg text { font-family: var(--font-body); font-size: 13px; fill: var(--ink); }
+  svg .t-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+  svg .t-mono { font-family: var(--font-mono); font-size: 11.5px; fill: var(--muted); }
+  svg .t-label { font-family: var(--font-mono); font-size: 11.5px; fill: var(--muted); }
+  svg .t-accent { fill: var(--accent); }
+  svg .t-warn { fill: var(--warn); }
+  svg .own { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+  svg .managed { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; }
+  svg .inner { fill: var(--surface-2); stroke: none; }
+  svg .hl { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  svg .hl-warn { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; }
+  svg .edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  svg .edge-accent { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  svg .edge-warn { stroke: var(--warn); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+  svg .bus { stroke: var(--line); stroke-width: 6; stroke-linecap: round; }
+  svg .head { fill: var(--muted); }
+  svg .head-accent { fill: var(--accent); }
+  svg .head-warn { fill: var(--warn); }
+
+  /* Failure table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 14px; vertical-align: top; border-bottom: 1px solid var(--surface-2); }
+  th {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted); background: var(--surface-2);
+  }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .pill {
+    display: inline-block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 500;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .pill.degraded { color: var(--warn); background: var(--warn-soft); }
+  .pill.down { color: #b42318; background: color-mix(in srgb, #b42318 12%, transparent); }
+  :root[data-theme="dark"] .pill.down { color: #f08a7e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.down { color: #f08a7e; } }
+
+  /* Status list */
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .status > div { border-top: 3px solid var(--line); padding-top: 12px; display: grid; gap: 8px; align-content: start; }
+  .status > div.built { border-top-color: var(--ok); }
+  .status > div.planned { border-top-color: var(--warn); }
+  .status h3 { margin: 0; font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+  .status ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+  /* Version history */
+  .history { display: grid; gap: 14px; }
+  .timeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .vcard {
+    all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; align-content: start;
+    padding: 14px 16px; border-radius: 10px; background: var(--surface);
+    border: 1px solid var(--line); color: var(--ink); font: inherit;
+  }
+  .vcard:hover { border-color: var(--muted); }
+  .vcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .vcard[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+  .vcard .vtag { font-family: var(--font-mono); font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; }
+  .vcard .vtag b { font-weight: 500; color: var(--accent); }
+  .vcard .vname { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+  .vcard .vsum { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+  .vcard.next { cursor: default; border-style: dashed; background: transparent; }
+  .vcard.next .vtag b { color: var(--warn); }
+  .vcard.next ul { margin: 0; padding-left: 16px; font-size: 13.5px; color: var(--muted); display: grid; gap: 2px; }
+  .changes {
+    border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; display: grid; gap: 4px;
+  }
+  .changes strong { font-family: var(--font-mono); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .changes ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: 14px; }
+  article.version { display: grid; gap: 56px; }
+  .canvas.code pre { margin: 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.55; color: var(--ink); }
+  .canvas.code code { font-size: inherit; }
+  .builds-on { font-size: 14px; color: var(--muted); }
+  .builds-on a { color: var(--accent); font-weight: 600; }
+  @media (prefers-reduced-motion: no-preference) { .vcard { transition: border-color .15s, background .15s; } }
+</style>
+</head>
+<body>
+<main>
+  <section class="history" aria-label="Architecture versions">
+    <span class="eyebrow">Architecture history · pick a version</span>
+    <div class="timeline" role="tablist">
+      <button class="vcard" role="tab" data-show="v1" aria-selected="false"><span class="vtag"><b>v1</b>2026-09-30</span><span class="vname">Scale out</span><span class="vsum">Weighted load balancer, three app servers, one shared Valkey, MongoDB Atlas.</span></button>
+      <button class="vcard" role="tab" data-show="v2" aria-selected="false"><span class="vtag"><b>v2</b>2026-09-30</span><span class="vname">Edge protection</span><span class="vsum">CDN and WAF at the edge, an API gateway, and rate limits split across layers.</span></button>
+      <button class="vcard" role="tab" data-show="v3" aria-selected="false"><span class="vtag"><b>v3</b>2026-09-30</span><span class="vname">Database fault tolerance</span><span class="vsum">MongoDB replica set across three zones, oplog replication and automatic failover.</span></button>
+      <button class="vcard" role="tab" data-show="v4" aria-selected="false"><span class="vtag"><b>v4</b>2026-09-30</span><span class="vname">Blog service, one login</span><span class="vsum">Cognito sign-in shared by every service, and a GraphQL blog on AppSync and Lambda using its own database in the same cluster.</span></button>
+      <button class="vcard" role="tab" data-show="v5" aria-selected="true"><span class="vtag"><b>v5</b>2026-09-30 · current</span><span class="vname">Team stacks, blog media</span><span class="vsum">Each team owns its own stack: the blog gets its own Valkey, and blog images go to S3 behind CloudFront.</span></button>
+      <div class="vcard next"><span class="vtag"><b>next</b>planned</span><span class="vname">Where we're going</span><ul><li>Video service: reels uploaded to S3, transcoded, shared with friends</li><li>Rate limit store behind an interface; circuit breaker with in-memory fallback</li><li>Cluster-safe rate limit scripts (hash tags)</li></ul></div>
+    </div>
+  </section>
+  <article class="version" data-version="v1" aria-label="Architecture v1" hidden>
+
+  <header>
+    <span class="eyebrow">rate_limitar · architecture v1 · Scale out</span>
+    <h1>Three app servers, one shared Valkey, no single box that takes it all down</h1>
+    <p class="lede">
+      Server A stays an app-only primary with double weight. The load balancer, Valkey and
+      MongoDB are rented managed services, so none of them uses your servers' RAM, and each
+      runs with its own redundancy.
+    </p>
+  </header>
+
+  <!-- 1. Topology -->
+  <section>
+    <h2>Where every request goes</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 610" role="img" aria-label="Users reach a managed load balancer, which splits traffic across server A with weight 2 and servers B and C with weight 1. All three app servers connect over a private network to one managed Valkey for rate limits and cache, and to MongoDB Atlas for data.">
+          <defs>
+            <marker id="h-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Users -->
+          <rect class="own" x="400" y="14" width="160" height="44" rx="22" />
+          <text x="480" y="41" text-anchor="middle" class="t-title">Users</text>
+
+          <line class="edge" x1="480" y1="58" x2="480" y2="104" marker-end="url(#h-v1)" />
+          <text x="490" y="86" class="t-label">HTTPS</text>
+
+          <!-- Load balancer -->
+          <rect class="managed" x="160" y="106" width="640" height="72" rx="10" />
+          <text x="480" y="136" text-anchor="middle" class="t-title">Managed load balancer</text>
+          <text x="480" y="158" text-anchor="middle" class="t-mono">weighted round robin · health check GET /health</text>
+
+          <!-- LB -> servers (A drawn heavier: weight 2) -->
+          <line class="edge" x1="260" y1="178" x2="172" y2="244" marker-end="url(#h-v1)" style="stroke-width:3.2" />
+          <text x="206" y="214" text-anchor="end" class="t-label">weight 2</text>
+          <line class="edge" x1="480" y1="178" x2="480" y2="244" marker-end="url(#h-v1)" />
+          <text x="490" y="216" class="t-label">weight 1</text>
+          <line class="edge" x1="700" y1="178" x2="788" y2="244" marker-end="url(#h-v1)" />
+          <text x="756" y="214" class="t-label">weight 1</text>
+
+          <!-- Server A -->
+          <rect class="own" x="40" y="248" width="260" height="132" rx="10" />
+          <text x="56" y="274" class="t-title">Server A · 2 GB</text>
+          <text x="284" y="274" text-anchor="end" class="t-mono t-accent">primary</text>
+          <rect class="inner" x="56" y="288" width="228" height="78" rx="6" />
+          <text x="68" y="310">api container</text>
+          <text x="68" y="330" class="t-mono">rate limiter + breaker</text>
+          <text x="68" y="349" class="t-mono">fallback Map in RAM</text>
+
+          <!-- Server B -->
+          <rect class="own" x="350" y="248" width="260" height="132" rx="10" />
+          <text x="366" y="274" class="t-title">Server B · 1 GB</text>
+          <rect class="inner" x="366" y="288" width="228" height="78" rx="6" />
+          <text x="378" y="310">api container</text>
+          <text x="378" y="330" class="t-mono">rate limiter + breaker</text>
+          <text x="378" y="349" class="t-mono">fallback Map in RAM</text>
+
+          <!-- Server C -->
+          <rect class="own" x="660" y="248" width="260" height="132" rx="10" />
+          <text x="676" y="274" class="t-title">Server C · 1 GB</text>
+          <rect class="inner" x="676" y="288" width="228" height="78" rx="6" />
+          <text x="688" y="310">api container</text>
+          <text x="688" y="330" class="t-mono">rate limiter + breaker</text>
+          <text x="688" y="349" class="t-mono">fallback Map in RAM</text>
+
+          <!-- Private network bus -->
+          <line class="edge" x1="170" y1="380" x2="170" y2="420" />
+          <line class="edge" x1="480" y1="380" x2="480" y2="420" />
+          <line class="edge" x1="790" y1="380" x2="790" y2="420" />
+          <line class="bus" x1="40" y1="424" x2="920" y2="424" />
+          <text x="920" y="446" text-anchor="end" class="t-label">private network</text>
+
+          <!-- Bus -> stores -->
+          <line class="edge-accent" x1="280" y1="428" x2="280" y2="478" marker-end="url(#ha-v1)" />
+          <text x="292" y="456" class="t-label t-accent">1 Lua call per request · ≤200 ms</text>
+          <line class="edge" x1="680" y1="428" x2="680" y2="478" marker-end="url(#h-v1)" />
+          <text x="692" y="456" class="t-label">reads / writes</text>
+
+          <!-- Valkey -->
+          <rect class="managed" x="120" y="480" width="320" height="96" rx="10" />
+          <text x="280" y="506" text-anchor="middle" class="t-title">Managed Valkey</text>
+          <rect class="hl" x="146" y="520" width="112" height="34" rx="6" />
+          <text x="202" y="542" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <line class="edge" x1="260" y1="537" x2="298" y2="537" marker-end="url(#h-v1)" />
+          <rect class="inner" x="302" y="520" width="112" height="34" rx="6" />
+          <text x="358" y="542" text-anchor="middle" class="t-mono">replica</text>
+
+          <!-- MongoDB -->
+          <rect class="managed" x="520" y="480" width="320" height="96" rx="10" />
+          <text x="680" y="506" text-anchor="middle" class="t-title">MongoDB Atlas</text>
+          <rect class="inner" x="538" y="520" width="90" height="34" rx="6" />
+          <text x="583" y="542" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <rect class="inner" x="636" y="520" width="90" height="34" rx="6" />
+          <text x="681" y="542" text-anchor="middle" class="t-mono">secondary</text>
+          <rect class="inner" x="734" y="520" width="90" height="34" rx="6" />
+          <text x="779" y="542" text-anchor="middle" class="t-mono">secondary</text>
+
+          <!-- Legend (the dashed/solid encoding repeats, so it earns one) -->
+          <rect class="own" x="40" y="592" width="26" height="12" rx="3" />
+          <text x="74" y="603" class="t-label">your server, you run it</text>
+          <rect class="managed" x="250" y="592" width="26" height="12" rx="3" />
+          <text x="284" y="603" class="t-label">rented managed service, runs on the provider's machines</text>
+        </svg>
+      </div>
+      <figcaption>
+        Only the solid boxes are servers you pay for and maintain. Server A gets twice the traffic
+        (weight 2). All three app servers read and write the same Valkey keys
+        (<code>ratelimit:&lt;algorithm&gt;:&lt;ip&gt;</code>, later <code>cache:*</code>), so a user's
+        limit is shared no matter which server handles the request.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 2. Inside one app server -->
+  <section>
+    <h2>Inside one api container</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 330" role="img" aria-label="A request passes requestId and requestLogger, then the rate limiter. The rate limiter asks the circuit breaker: when closed it checks the shared Valkey, when open it uses this server's in-memory Map. Allowed requests continue to the controller and service; over-limit requests get 429.">
+          <defs>
+            <marker id="h2-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha2-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw2-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Middleware chain -->
+          <rect class="own" x="16" y="24" width="116" height="48" rx="8" />
+          <text x="74" y="53" text-anchor="middle">request</text>
+          <line class="edge" x1="132" y1="48" x2="174" y2="48" marker-end="url(#h2-v1)" />
+
+          <rect class="own" x="176" y="24" width="116" height="48" rx="8" />
+          <text x="234" y="53" text-anchor="middle" class="mono" style="font-family:var(--font-mono);font-size:12px">requestId</text>
+          <line class="edge" x1="292" y1="48" x2="334" y2="48" marker-end="url(#h2-v1)" />
+
+          <rect class="own" x="336" y="24" width="116" height="48" rx="8" />
+          <text x="394" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">requestLogger</text>
+          <line class="edge" x1="452" y1="48" x2="494" y2="48" marker-end="url(#h2-v1)" />
+
+          <rect class="hl" x="496" y="24" width="116" height="48" rx="8" />
+          <text x="554" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">rateLimiter</text>
+          <line class="edge" x1="612" y1="48" x2="654" y2="48" marker-end="url(#h2-v1)" />
+          <text x="633" y="40" text-anchor="middle" class="t-label" style="font-size:10.5px">allowed</text>
+
+          <rect class="own" x="656" y="24" width="116" height="48" rx="8" />
+          <text x="714" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">controller</text>
+          <line class="edge" x1="772" y1="48" x2="814" y2="48" marker-end="url(#h2-v1)" />
+
+          <rect class="own" x="816" y="24" width="116" height="48" rx="8" />
+          <text x="874" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">service</text>
+
+          <!-- Over limit -> 429 -->
+          <line class="edge" x1="600" y1="72" x2="814" y2="140" marker-end="url(#h2-v1)" />
+          <text x="742" y="98" class="t-label">over limit</text>
+          <rect class="own" x="816" y="120" width="116" height="52" rx="8" />
+          <text x="874" y="143" text-anchor="middle" class="t-title">429</text>
+          <text x="874" y="161" text-anchor="middle" class="t-mono">+ Retry-After</text>
+
+          <!-- Limiter -> breaker -->
+          <line class="edge" x1="554" y1="72" x2="554" y2="118" marker-end="url(#h2-v1)" />
+          <text x="564" y="100" class="t-label">which store?</text>
+          <rect class="own" x="474" y="120" width="160" height="52" rx="8" />
+          <text x="554" y="143" text-anchor="middle" class="t-title">circuit breaker</text>
+          <text x="554" y="161" text-anchor="middle" class="t-mono t-warn">planned</text>
+
+          <!-- Breaker -> stores -->
+          <line class="edge-accent" x1="500" y1="172" x2="384" y2="250" marker-end="url(#ha2-v1)" />
+          <text x="430" y="202" text-anchor="end" class="t-label t-accent">CLOSED</text>
+          <line class="edge-warn" x1="608" y1="172" x2="736" y2="250" marker-end="url(#hw2-v1)" />
+          <text x="684" y="202" class="t-label t-warn">OPEN</text>
+
+          <rect class="hl" x="232" y="252" width="232" height="60" rx="8" />
+          <text x="348" y="277" text-anchor="middle" class="t-title">Valkey, shared</text>
+          <text x="348" y="297" text-anchor="middle" class="t-mono">exact limit across all servers</text>
+
+          <rect class="hl-warn" x="640" y="252" width="232" height="60" rx="8" />
+          <text x="756" y="277" text-anchor="middle" class="t-title">in-memory Map</text>
+          <text x="756" y="297" text-anchor="middle" class="t-mono">this server only · approximate</text>
+        </svg>
+      </div>
+      <figcaption>
+        Today the rate limiter talks to Valkey directly and fails open when it can't. The planned
+        circuit breaker sits between them: while Valkey is healthy nothing changes; when it isn't, each
+        server limits on its own with the in-memory algorithms that already exist, so users
+        get up to 3× the limit instead of unlimited, and no request waits on a dead connection.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 3. Breaker states -->
+  <section>
+    <h2>How the breaker decides</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 760 350" role="img" aria-label="Circuit breaker state machine. Closed uses Valkey; after 5 failures in a row it moves to Open, which skips Valkey and uses the in-memory Map. After 10 seconds it moves to Half-open and lets one trial request through: success returns to Closed, failure returns to Open.">
+          <defs>
+            <marker id="h3-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha3-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw3-v1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- CLOSED -->
+          <rect class="hl" x="40" y="40" width="200" height="80" rx="40" />
+          <text x="140" y="74" text-anchor="middle" class="t-title">CLOSED</text>
+          <text x="140" y="96" text-anchor="middle" class="t-mono">use Valkey</text>
+
+          <!-- OPEN -->
+          <rect class="hl-warn" x="520" y="40" width="200" height="80" rx="40" />
+          <text x="620" y="74" text-anchor="middle" class="t-title">OPEN</text>
+          <text x="620" y="96" text-anchor="middle" class="t-mono">skip Valkey · use Map · 0 ms</text>
+
+          <!-- HALF-OPEN -->
+          <rect class="own" x="280" y="248" width="200" height="80" rx="40" />
+          <text x="380" y="282" text-anchor="middle" class="t-title">HALF-OPEN</text>
+          <text x="380" y="304" text-anchor="middle" class="t-mono">one trial request</text>
+
+          <!-- CLOSED -> OPEN -->
+          <line class="edge-warn" x1="240" y1="80" x2="518" y2="80" marker-end="url(#hw3-v1)" />
+          <text x="380" y="70" text-anchor="middle" class="t-label t-warn">5 failures in a row</text>
+
+          <!-- OPEN -> HALF-OPEN -->
+          <line class="edge" x1="590" y1="120" x2="448" y2="246" marker-end="url(#h3-v1)" />
+          <text x="508" y="170" text-anchor="end" class="t-label">after 10 s</text>
+
+          <!-- HALF-OPEN -> OPEN -->
+          <line class="edge-warn" x1="470" y1="262" x2="650" y2="122" marker-end="url(#hw3-v1)" />
+          <text x="600" y="214" class="t-label t-warn">trial fails</text>
+
+          <!-- HALF-OPEN -> CLOSED -->
+          <line class="edge-accent" x1="310" y1="246" x2="170" y2="122" marker-end="url(#ha3-v1)" />
+          <text x="226" y="198" text-anchor="end" class="t-label t-accent">trial succeeds</text>
+        </svg>
+      </div>
+      <figcaption>
+        During an outage only the first few requests pay the 200 ms timeout; after that the breaker
+        skips Valkey instantly. It logs once when it opens and once when it closes, instead of
+        once per request, and a recovering Valkey gets one trial request instead of a flood.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 4. Failure matrix -->
+  <section>
+    <h2>If one piece fails</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Server A</td>
+            <td><span class="pill up">up</span></td>
+            <td>Load balancer sees <code>/health</code> fail and sends all traffic to B and C. Slower, not down.</td>
+          </tr>
+          <tr>
+            <td>Server B or C</td>
+            <td><span class="pill up">up</span></td>
+            <td>Same: the other two keep serving.</td>
+          </tr>
+          <tr>
+            <td>Valkey primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>Provider promotes the replica in seconds. Meanwhile requests are allowed (today) or limited per server (with the breaker).</td>
+          </tr>
+          <tr>
+            <td>All of Valkey</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>API keeps working. Rate limits are off (today) or per server, up to 3× (with the breaker). Cache misses go to MongoDB.</td>
+          </tr>
+          <tr>
+            <td>MongoDB primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>Atlas elects a new primary within seconds; writes pause briefly, and cached reads still come from Valkey.</td>
+          </tr>
+          <tr>
+            <td>Load balancer machine</td>
+            <td><span class="pill up">up</span></td>
+            <td>Provider runs it on several machines and replaces the failed one.</td>
+          </tr>
+          <tr>
+            <td>Whole provider region</td>
+            <td><span class="pill down">down</span></td>
+            <td>The one remaining risk. Surviving it needs a second region with DNS failover, usually not worth it at this size.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Built vs planned -->
+  <section>
+    <h2>What exists in the repo today</h2>
+    <div class="status">
+      <div class="built">
+        <h3>Built and tested</h3>
+        <ul>
+          <li>Express 5 API with the users CRUD module</li>
+          <li>Five rate limit algorithms, in memory and as Valkey Lua scripts</li>
+          <li>Per-IP keys, IPv6 grouped by <code>/64</code>, <code>TRUST_PROXY</code></li>
+          <li>Fail open when Valkey is unreachable, <code>/health</code> shows the store</li>
+          <li>Dockerfile and <code>docker-compose.yml</code> with Valkey</li>
+        </ul>
+      </div>
+      <div class="planned">
+        <h3>Planned</h3>
+        <ul>
+          <li>Circuit breaker with in-memory fallback</li>
+          <li>MongoDB Atlas models and <code>cache:*</code> cache-aside</li>
+          <li>Managed load balancer and managed Valkey setup</li>
+          <li><code>TRUST_PROXY=1</code> on every server behind the load balancer</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </article>
+  <article class="version" data-version="v2" aria-label="Architecture v2" hidden>
+
+  <header>
+    <span class="eyebrow">rate_limitar · architecture v2 · Edge protection</span>
+    <h1>From the edge to the database: every layer a request crosses</h1>
+    <p class="lede">
+      Traffic is filtered three times before it reaches your code: the CDN and WAF at the edge,
+      then the API gateway, then the load balancer. Server A stays an app-only primary with
+      double weight. Everything drawn dashed is a rented managed service, so none of it uses your
+      servers' RAM.
+    </p>
+
+    <div class="changes"><strong>New since v1</strong><ul><li>Edge network with CDN and WAF in front of everything</li><li>API gateway with API keys and a coarse per-IP limit</li><li>&quot;Which layer limits what&quot; table, and the client IP through the proxy chain</li><li>Failure rows for the edge, gateway and load balancer services</li></ul></div>
+  </header>
+
+  <!-- 1. Topology -->
+  <section>
+    <h2>Where every request goes</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 850" role="img" aria-label="Users reach an edge network with a CDN and WAF, then an API gateway, then a managed load balancer, which splits traffic across server A with weight 2 and servers B and C with weight 1. All three app servers connect over a private network to one managed Valkey for rate limits and cache, and to MongoDB Atlas for data.">
+          <defs>
+            <marker id="h-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Users -->
+          <rect class="own" x="400" y="14" width="160" height="44" rx="22" />
+          <text x="480" y="41" text-anchor="middle" class="t-title">Users</text>
+          <line class="edge" x1="480" y1="58" x2="480" y2="98" marker-end="url(#h-v2)" />
+          <text x="490" y="83" class="t-label">HTTPS · api.yourdomain.com</text>
+
+          <!-- Edge: CDN + WAF -->
+          <rect class="managed" x="160" y="100" width="640" height="100" rx="10" />
+          <text x="176" y="122" class="t-label">edge network, e.g. Cloudflare · runs in 300+ cities</text>
+          <rect class="inner" x="176" y="134" width="296" height="52" rx="6" />
+          <text x="192" y="156" class="t-title">CDN</text>
+          <text x="192" y="175" class="t-mono">cache static + cacheable GET · TLS</text>
+          <line class="edge" x1="472" y1="160" x2="486" y2="160" marker-end="url(#h-v2)" />
+          <rect class="inner" x="488" y="134" width="296" height="52" rx="6" />
+          <text x="504" y="156" class="t-title">WAF</text>
+          <text x="504" y="175" class="t-mono">SQLi/XSS · bots · DDoS · IP limit</text>
+
+          <!-- Blocked at edge -->
+          <line class="edge-warn" x1="800" y1="160" x2="862" y2="160" marker-end="url(#hw-v2)" />
+          <text x="870" y="156" class="t-label t-warn">blocked</text>
+          <text x="870" y="172" class="t-label t-warn">at edge</text>
+
+          <line class="edge" x1="480" y1="200" x2="480" y2="236" marker-end="url(#h-v2)" />
+          <text x="490" y="223" class="t-label">clean traffic</text>
+
+          <!-- API gateway -->
+          <rect class="managed" x="160" y="238" width="640" height="72" rx="10" />
+          <text x="480" y="266" text-anchor="middle" class="t-title">API gateway</text>
+          <text x="480" y="288" text-anchor="middle" class="t-mono">API keys / auth · routing · coarse limit 20 req/s per IP</text>
+          <line class="edge-warn" x1="800" y1="274" x2="862" y2="274" marker-end="url(#hw-v2)" />
+          <text x="870" y="270" class="t-label t-warn">401 / 429</text>
+          <text x="870" y="286" class="t-label t-warn">at gateway</text>
+
+          <line class="edge" x1="480" y1="310" x2="480" y2="350" marker-end="url(#h-v2)" />
+          <text x="490" y="335" class="t-label">authenticated</text>
+
+          <!-- Load balancer -->
+          <rect class="managed" x="160" y="352" width="640" height="64" rx="10" />
+          <text x="480" y="378" text-anchor="middle" class="t-title">Managed load balancer</text>
+          <text x="480" y="400" text-anchor="middle" class="t-mono">weighted round robin · health check GET /health</text>
+
+          <!-- LB -> servers (A drawn heavier: weight 2) -->
+          <line class="edge" x1="260" y1="416" x2="172" y2="480" marker-end="url(#h-v2)" style="stroke-width:3.2" />
+          <text x="206" y="450" text-anchor="end" class="t-label">weight 2</text>
+          <line class="edge" x1="480" y1="416" x2="480" y2="480" marker-end="url(#h-v2)" />
+          <text x="490" y="452" class="t-label">weight 1</text>
+          <line class="edge" x1="700" y1="416" x2="788" y2="480" marker-end="url(#h-v2)" />
+          <text x="756" y="450" class="t-label">weight 1</text>
+
+          <!-- Server A -->
+          <rect class="own" x="40" y="484" width="260" height="132" rx="10" />
+          <text x="56" y="510" class="t-title">Server A · 2 GB</text>
+          <text x="284" y="510" text-anchor="end" class="t-mono t-accent">primary</text>
+          <rect class="inner" x="56" y="524" width="228" height="78" rx="6" />
+          <text x="68" y="546">api container</text>
+          <text x="68" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="68" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Server B -->
+          <rect class="own" x="350" y="484" width="260" height="132" rx="10" />
+          <text x="366" y="510" class="t-title">Server B · 1 GB</text>
+          <rect class="inner" x="366" y="524" width="228" height="78" rx="6" />
+          <text x="378" y="546">api container</text>
+          <text x="378" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="378" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Server C -->
+          <rect class="own" x="660" y="484" width="260" height="132" rx="10" />
+          <text x="676" y="510" class="t-title">Server C · 1 GB</text>
+          <rect class="inner" x="676" y="524" width="228" height="78" rx="6" />
+          <text x="688" y="546">api container</text>
+          <text x="688" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="688" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Private network bus -->
+          <line class="edge" x1="170" y1="616" x2="170" y2="656" />
+          <line class="edge" x1="480" y1="616" x2="480" y2="656" />
+          <line class="edge" x1="790" y1="616" x2="790" y2="656" />
+          <line class="bus" x1="40" y1="660" x2="920" y2="660" />
+          <text x="920" y="682" text-anchor="end" class="t-label">private network</text>
+
+          <!-- Bus -> stores -->
+          <line class="edge-accent" x1="280" y1="664" x2="280" y2="714" marker-end="url(#ha-v2)" />
+          <text x="292" y="692" class="t-label t-accent">1 Lua call per request · ≤200 ms</text>
+          <line class="edge" x1="680" y1="664" x2="680" y2="714" marker-end="url(#h-v2)" />
+          <text x="692" y="692" class="t-label">reads / writes</text>
+
+          <!-- Valkey -->
+          <rect class="managed" x="120" y="716" width="320" height="96" rx="10" />
+          <text x="280" y="742" text-anchor="middle" class="t-title">Managed Valkey</text>
+          <rect class="hl" x="146" y="756" width="112" height="34" rx="6" />
+          <text x="202" y="778" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <line class="edge" x1="260" y1="773" x2="298" y2="773" marker-end="url(#h-v2)" />
+          <rect class="inner" x="302" y="756" width="112" height="34" rx="6" />
+          <text x="358" y="778" text-anchor="middle" class="t-mono">replica</text>
+
+          <!-- MongoDB -->
+          <rect class="managed" x="520" y="716" width="320" height="96" rx="10" />
+          <text x="680" y="742" text-anchor="middle" class="t-title">MongoDB Atlas</text>
+          <rect class="inner" x="538" y="756" width="90" height="34" rx="6" />
+          <text x="583" y="778" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <rect class="inner" x="636" y="756" width="90" height="34" rx="6" />
+          <text x="681" y="778" text-anchor="middle" class="t-mono">secondary</text>
+          <rect class="inner" x="734" y="756" width="90" height="34" rx="6" />
+          <text x="779" y="778" text-anchor="middle" class="t-mono">secondary</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="830" width="26" height="12" rx="3" />
+          <text x="74" y="841" class="t-label">your server, you run it</text>
+          <rect class="managed" x="250" y="830" width="26" height="12" rx="3" />
+          <text x="284" y="841" class="t-label">rented managed service, runs on the provider's machines</text>
+        </svg>
+      </div>
+      <figcaption>
+        Only the solid boxes are servers you pay for and maintain. Bad traffic is dropped as early
+        as possible: floods and attacks at the WAF, unauthenticated or excessive calls at the gateway,
+        and only then per-user rules in your app. All three app servers share the same Valkey keys
+        (<code>ratelimit:&lt;algorithm&gt;:&lt;ip&gt;</code>, later <code>cache:*</code>), so a user's
+        limit holds no matter which server handles the request.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 1b. Layered limits -->
+  <section>
+    <h2>Which layer limits what</h2>
+    <p>
+      Each layer stops a different kind of traffic, and the cheaper the layer, the earlier it runs.
+      The thresholds get tighter the closer a request gets to your code.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Limits by</th><th>Example rule</th><th>Knows your users?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WAF</td>
+            <td>IP, country, bot score, attack patterns</td>
+            <td>Block an IP above 100 req/s; block SQL injection payloads</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>API gateway</td>
+            <td>IP, API key, route</td>
+            <td>20 req/s per IP; 10,000 req/day per API key</td>
+            <td>Partly: API keys</td>
+          </tr>
+          <tr>
+            <td>Your app (this repo)</td>
+            <td>IP today; user, plan or action later</td>
+            <td>3 req/s per IP; 5 login attempts per account per 15 min</td>
+            <td>Yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Client IP through the chain.</strong> With the CDN, gateway and load balancer in front,
+      the connection your app sees always comes from the load balancer. The real user IP travels in
+      <code>X-Forwarded-For</code>, so <code>TRUST_PROXY</code> must equal the number of proxies in
+      front of the app (3 here), or the app should read the edge's own header (Cloudflare sends
+      <code>CF-Connecting-IP</code>). The app servers should also accept connections only from the
+      load balancer, so nobody can skip the edge and forge that header.
+    </p>
+  </section>
+
+
+  <!-- 2. Inside one app server -->
+  <section>
+    <h2>Inside one api container</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 330" role="img" aria-label="A request passes requestId and requestLogger, then the rate limiter. The rate limiter asks the circuit breaker: when closed it checks the shared Valkey, when open it uses this server's in-memory Map. Allowed requests continue to the controller and service; over-limit requests get 429.">
+          <defs>
+            <marker id="h2-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha2-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw2-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Middleware chain -->
+          <rect class="own" x="16" y="24" width="116" height="48" rx="8" />
+          <text x="74" y="53" text-anchor="middle">request</text>
+          <line class="edge" x1="132" y1="48" x2="174" y2="48" marker-end="url(#h2-v2)" />
+
+          <rect class="own" x="176" y="24" width="116" height="48" rx="8" />
+          <text x="234" y="53" text-anchor="middle" class="mono" style="font-family:var(--font-mono);font-size:12px">requestId</text>
+          <line class="edge" x1="292" y1="48" x2="334" y2="48" marker-end="url(#h2-v2)" />
+
+          <rect class="own" x="336" y="24" width="116" height="48" rx="8" />
+          <text x="394" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">requestLogger</text>
+          <line class="edge" x1="452" y1="48" x2="494" y2="48" marker-end="url(#h2-v2)" />
+
+          <rect class="hl" x="496" y="24" width="116" height="48" rx="8" />
+          <text x="554" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">rateLimiter</text>
+          <line class="edge" x1="612" y1="48" x2="654" y2="48" marker-end="url(#h2-v2)" />
+          <text x="633" y="40" text-anchor="middle" class="t-label" style="font-size:10.5px">allowed</text>
+
+          <rect class="own" x="656" y="24" width="116" height="48" rx="8" />
+          <text x="714" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">controller</text>
+          <line class="edge" x1="772" y1="48" x2="814" y2="48" marker-end="url(#h2-v2)" />
+
+          <rect class="own" x="816" y="24" width="116" height="48" rx="8" />
+          <text x="874" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">service</text>
+
+          <!-- Over limit -> 429 -->
+          <line class="edge" x1="600" y1="72" x2="814" y2="140" marker-end="url(#h2-v2)" />
+          <text x="742" y="98" class="t-label">over limit</text>
+          <rect class="own" x="816" y="120" width="116" height="52" rx="8" />
+          <text x="874" y="143" text-anchor="middle" class="t-title">429</text>
+          <text x="874" y="161" text-anchor="middle" class="t-mono">+ Retry-After</text>
+
+          <!-- Limiter -> breaker -->
+          <line class="edge" x1="554" y1="72" x2="554" y2="118" marker-end="url(#h2-v2)" />
+          <text x="564" y="100" class="t-label">which store?</text>
+          <rect class="own" x="474" y="120" width="160" height="52" rx="8" />
+          <text x="554" y="143" text-anchor="middle" class="t-title">circuit breaker</text>
+          <text x="554" y="161" text-anchor="middle" class="t-mono t-warn">planned</text>
+
+          <!-- Breaker -> stores -->
+          <line class="edge-accent" x1="500" y1="172" x2="384" y2="250" marker-end="url(#ha2-v2)" />
+          <text x="430" y="202" text-anchor="end" class="t-label t-accent">CLOSED</text>
+          <line class="edge-warn" x1="608" y1="172" x2="736" y2="250" marker-end="url(#hw2-v2)" />
+          <text x="684" y="202" class="t-label t-warn">OPEN</text>
+
+          <rect class="hl" x="232" y="252" width="232" height="60" rx="8" />
+          <text x="348" y="277" text-anchor="middle" class="t-title">Valkey, shared</text>
+          <text x="348" y="297" text-anchor="middle" class="t-mono">exact limit across all servers</text>
+
+          <rect class="hl-warn" x="640" y="252" width="232" height="60" rx="8" />
+          <text x="756" y="277" text-anchor="middle" class="t-title">in-memory Map</text>
+          <text x="756" y="297" text-anchor="middle" class="t-mono">this server only · approximate</text>
+        </svg>
+      </div>
+      <figcaption>
+        Today the rate limiter talks to Valkey directly and fails open when it can't. The planned
+        circuit breaker sits between them: while Valkey is healthy nothing changes; when it isn't, each
+        server limits on its own with the in-memory algorithms that already exist, so users
+        get up to 3× the limit instead of unlimited, and no request waits on a dead connection.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 3. Breaker states -->
+  <section>
+    <h2>How the breaker decides</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 760 350" role="img" aria-label="Circuit breaker state machine. Closed uses Valkey; after 5 failures in a row it moves to Open, which skips Valkey and uses the in-memory Map. After 10 seconds it moves to Half-open and lets one trial request through: success returns to Closed, failure returns to Open.">
+          <defs>
+            <marker id="h3-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha3-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw3-v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- CLOSED -->
+          <rect class="hl" x="40" y="40" width="200" height="80" rx="40" />
+          <text x="140" y="74" text-anchor="middle" class="t-title">CLOSED</text>
+          <text x="140" y="96" text-anchor="middle" class="t-mono">use Valkey</text>
+
+          <!-- OPEN -->
+          <rect class="hl-warn" x="520" y="40" width="200" height="80" rx="40" />
+          <text x="620" y="74" text-anchor="middle" class="t-title">OPEN</text>
+          <text x="620" y="96" text-anchor="middle" class="t-mono">skip Valkey · use Map · 0 ms</text>
+
+          <!-- HALF-OPEN -->
+          <rect class="own" x="280" y="248" width="200" height="80" rx="40" />
+          <text x="380" y="282" text-anchor="middle" class="t-title">HALF-OPEN</text>
+          <text x="380" y="304" text-anchor="middle" class="t-mono">one trial request</text>
+
+          <!-- CLOSED -> OPEN -->
+          <line class="edge-warn" x1="240" y1="80" x2="518" y2="80" marker-end="url(#hw3-v2)" />
+          <text x="380" y="70" text-anchor="middle" class="t-label t-warn">5 failures in a row</text>
+
+          <!-- OPEN -> HALF-OPEN -->
+          <line class="edge" x1="590" y1="120" x2="448" y2="246" marker-end="url(#h3-v2)" />
+          <text x="508" y="170" text-anchor="end" class="t-label">after 10 s</text>
+
+          <!-- HALF-OPEN -> OPEN -->
+          <line class="edge-warn" x1="470" y1="262" x2="650" y2="122" marker-end="url(#hw3-v2)" />
+          <text x="600" y="214" class="t-label t-warn">trial fails</text>
+
+          <!-- HALF-OPEN -> CLOSED -->
+          <line class="edge-accent" x1="310" y1="246" x2="170" y2="122" marker-end="url(#ha3-v2)" />
+          <text x="226" y="198" text-anchor="end" class="t-label t-accent">trial succeeds</text>
+        </svg>
+      </div>
+      <figcaption>
+        During an outage only the first few requests pay the 200 ms timeout; after that the breaker
+        skips Valkey instantly. It logs once when it opens and once when it closes, instead of
+        once per request, and a recovering Valkey gets one trial request instead of a flood.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 4. Failure matrix -->
+  <section>
+    <h2>If one piece fails</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Server A</td>
+            <td><span class="pill up">up</span></td>
+            <td>Load balancer sees <code>/health</code> fail and sends all traffic to B and C. Slower, not down.</td>
+          </tr>
+          <tr>
+            <td>Server B or C</td>
+            <td><span class="pill up">up</span></td>
+            <td>Same: the other two keep serving.</td>
+          </tr>
+          <tr>
+            <td>Valkey primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>Provider promotes the replica in seconds. Meanwhile requests are allowed (today) or limited per server (with the breaker).</td>
+          </tr>
+          <tr>
+            <td>All of Valkey</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>API keeps working. App rate limits are off (today) or per server, up to 3× (with the breaker). WAF and gateway limits still apply. Cache misses go to MongoDB.</td>
+          </tr>
+          <tr>
+            <td>MongoDB primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>Atlas elects a new primary within seconds; writes pause briefly, and cached reads still come from Valkey.</td>
+          </tr>
+          <tr>
+            <td>One CDN, gateway or LB machine</td>
+            <td><span class="pill up">up</span></td>
+            <td>Each is run on many machines by the provider; a failed one is replaced without you noticing.</td>
+          </tr>
+          <tr>
+            <td>A whole CDN, gateway or LB service</td>
+            <td><span class="pill down">down</span></td>
+            <td>Every request passes through all three, so a provider-wide outage of any of them makes the API unreachable. Rare, but these are the layers you can't route around without a second provider.</td>
+          </tr>
+          <tr>
+            <td>Whole provider region</td>
+            <td><span class="pill down">down</span></td>
+            <td>Surviving it needs a second region with DNS failover, usually not worth it at this size.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Built vs planned -->
+  <section>
+    <h2>What exists in the repo today</h2>
+    <div class="status">
+      <div class="built">
+        <h3>Built and tested</h3>
+        <ul>
+          <li>Express 5 API with the users CRUD module</li>
+          <li>Five rate limit algorithms, in memory and as Valkey Lua scripts</li>
+          <li>Per-IP keys, IPv6 grouped by <code>/64</code>, <code>TRUST_PROXY</code></li>
+          <li>Fail open when Valkey is unreachable, <code>/health</code> shows the store</li>
+          <li>Dockerfile and <code>docker-compose.yml</code> with Valkey</li>
+        </ul>
+      </div>
+      <div class="planned">
+        <h3>Planned</h3>
+        <ul>
+          <li>Circuit breaker with in-memory fallback</li>
+          <li>MongoDB Atlas models and <code>cache:*</code> cache-aside</li>
+          <li>CDN + WAF in front of the API domain</li>
+          <li>API gateway with API keys and a coarse per-IP limit</li>
+          <li>Managed load balancer and managed Valkey</li>
+          <li>Real client IP through the proxy chain, servers reachable only from the load balancer</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </article>
+  <article class="version" data-version="v3" aria-label="Architecture v3" hidden>
+
+  <header>
+    <span class="eyebrow">rate_limitar · architecture v3 · Database fault tolerance</span>
+    <h1>From the edge to the database: every layer a request crosses</h1>
+    <p class="lede">
+      Traffic is filtered three times before it reaches your code: the CDN and WAF at the edge,
+      then the API gateway, then the load balancer. Server A stays an app-only primary with
+      double weight, and the database is a three-node replica set, so no single machine can take
+      the API down. Everything drawn dashed is a rented managed service, so none of it uses your
+      servers' RAM.
+    </p>
+
+    <div class="changes"><strong>New since v2</strong><ul><li>How a write reaches the other copies: primary, oplog, majority acknowledgement</li><li>Failover timeline: election in about 12 s, driver retries the write once</li><li>Driver settings: mongodb+srv, retryWrites, w: majority, read preference</li><li>Failure rows for losing the MongoDB primary or a secondary</li></ul></div>
+  </header>
+
+  <!-- 1. Topology -->
+  <section>
+    <h2>Where every request goes</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 850" role="img" aria-label="Users reach an edge network with a CDN and WAF, then an API gateway, then a managed load balancer, which splits traffic across server A with weight 2 and servers B and C with weight 1. All three app servers connect over a private network to one managed Valkey for rate limits and cache, and to MongoDB Atlas for data.">
+          <defs>
+            <marker id="h-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Users -->
+          <rect class="own" x="400" y="14" width="160" height="44" rx="22" />
+          <text x="480" y="41" text-anchor="middle" class="t-title">Users</text>
+          <line class="edge" x1="480" y1="58" x2="480" y2="98" marker-end="url(#h-v3)" />
+          <text x="490" y="83" class="t-label">HTTPS · api.yourdomain.com</text>
+
+          <!-- Edge: CDN + WAF -->
+          <rect class="managed" x="160" y="100" width="640" height="100" rx="10" />
+          <text x="176" y="122" class="t-label">edge network, e.g. Cloudflare · runs in 300+ cities</text>
+          <rect class="inner" x="176" y="134" width="296" height="52" rx="6" />
+          <text x="192" y="156" class="t-title">CDN</text>
+          <text x="192" y="175" class="t-mono">cache static + cacheable GET · TLS</text>
+          <line class="edge" x1="472" y1="160" x2="486" y2="160" marker-end="url(#h-v3)" />
+          <rect class="inner" x="488" y="134" width="296" height="52" rx="6" />
+          <text x="504" y="156" class="t-title">WAF</text>
+          <text x="504" y="175" class="t-mono">SQLi/XSS · bots · DDoS · IP limit</text>
+
+          <!-- Blocked at edge -->
+          <line class="edge-warn" x1="800" y1="160" x2="862" y2="160" marker-end="url(#hw-v3)" />
+          <text x="870" y="156" class="t-label t-warn">blocked</text>
+          <text x="870" y="172" class="t-label t-warn">at edge</text>
+
+          <line class="edge" x1="480" y1="200" x2="480" y2="236" marker-end="url(#h-v3)" />
+          <text x="490" y="223" class="t-label">clean traffic</text>
+
+          <!-- API gateway -->
+          <rect class="managed" x="160" y="238" width="640" height="72" rx="10" />
+          <text x="480" y="266" text-anchor="middle" class="t-title">API gateway</text>
+          <text x="480" y="288" text-anchor="middle" class="t-mono">API keys / auth · routing · coarse limit 20 req/s per IP</text>
+          <line class="edge-warn" x1="800" y1="274" x2="862" y2="274" marker-end="url(#hw-v3)" />
+          <text x="870" y="270" class="t-label t-warn">401 / 429</text>
+          <text x="870" y="286" class="t-label t-warn">at gateway</text>
+
+          <line class="edge" x1="480" y1="310" x2="480" y2="350" marker-end="url(#h-v3)" />
+          <text x="490" y="335" class="t-label">authenticated</text>
+
+          <!-- Load balancer -->
+          <rect class="managed" x="160" y="352" width="640" height="64" rx="10" />
+          <text x="480" y="378" text-anchor="middle" class="t-title">Managed load balancer</text>
+          <text x="480" y="400" text-anchor="middle" class="t-mono">weighted round robin · health check GET /health</text>
+
+          <!-- LB -> servers (A drawn heavier: weight 2) -->
+          <line class="edge" x1="260" y1="416" x2="172" y2="480" marker-end="url(#h-v3)" style="stroke-width:3.2" />
+          <text x="206" y="450" text-anchor="end" class="t-label">weight 2</text>
+          <line class="edge" x1="480" y1="416" x2="480" y2="480" marker-end="url(#h-v3)" />
+          <text x="490" y="452" class="t-label">weight 1</text>
+          <line class="edge" x1="700" y1="416" x2="788" y2="480" marker-end="url(#h-v3)" />
+          <text x="756" y="450" class="t-label">weight 1</text>
+
+          <!-- Server A -->
+          <rect class="own" x="40" y="484" width="260" height="132" rx="10" />
+          <text x="56" y="510" class="t-title">Server A · 2 GB</text>
+          <text x="284" y="510" text-anchor="end" class="t-mono t-accent">primary</text>
+          <rect class="inner" x="56" y="524" width="228" height="78" rx="6" />
+          <text x="68" y="546">api container</text>
+          <text x="68" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="68" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Server B -->
+          <rect class="own" x="350" y="484" width="260" height="132" rx="10" />
+          <text x="366" y="510" class="t-title">Server B · 1 GB</text>
+          <rect class="inner" x="366" y="524" width="228" height="78" rx="6" />
+          <text x="378" y="546">api container</text>
+          <text x="378" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="378" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Server C -->
+          <rect class="own" x="660" y="484" width="260" height="132" rx="10" />
+          <text x="676" y="510" class="t-title">Server C · 1 GB</text>
+          <rect class="inner" x="676" y="524" width="228" height="78" rx="6" />
+          <text x="688" y="546">api container</text>
+          <text x="688" y="566" class="t-mono">fine limit 3 req/s per IP</text>
+          <text x="688" y="585" class="t-mono">breaker + fallback Map</text>
+
+          <!-- Private network bus -->
+          <line class="edge" x1="170" y1="616" x2="170" y2="656" />
+          <line class="edge" x1="480" y1="616" x2="480" y2="656" />
+          <line class="edge" x1="790" y1="616" x2="790" y2="656" />
+          <line class="bus" x1="40" y1="660" x2="920" y2="660" />
+          <text x="920" y="682" text-anchor="end" class="t-label">private network</text>
+
+          <!-- Bus -> stores -->
+          <line class="edge-accent" x1="280" y1="664" x2="280" y2="714" marker-end="url(#ha-v3)" />
+          <text x="292" y="692" class="t-label t-accent">1 Lua call per request · ≤200 ms</text>
+          <line class="edge" x1="680" y1="664" x2="680" y2="714" marker-end="url(#h-v3)" />
+          <text x="692" y="692" class="t-label">reads / writes</text>
+
+          <!-- Valkey -->
+          <rect class="managed" x="120" y="716" width="320" height="96" rx="10" />
+          <text x="280" y="742" text-anchor="middle" class="t-title">Managed Valkey</text>
+          <rect class="hl" x="146" y="756" width="112" height="34" rx="6" />
+          <text x="202" y="778" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <line class="edge" x1="260" y1="773" x2="298" y2="773" marker-end="url(#h-v3)" />
+          <rect class="inner" x="302" y="756" width="112" height="34" rx="6" />
+          <text x="358" y="778" text-anchor="middle" class="t-mono">replica</text>
+
+          <!-- MongoDB -->
+          <rect class="managed" x="520" y="716" width="320" height="96" rx="10" />
+          <text x="680" y="742" text-anchor="middle" class="t-title">MongoDB Atlas · replica set, 3 zones</text>
+          <rect class="inner" x="538" y="756" width="90" height="34" rx="6" />
+          <text x="583" y="778" text-anchor="middle" class="t-mono" style="fill:var(--ink)">primary</text>
+          <rect class="inner" x="636" y="756" width="90" height="34" rx="6" />
+          <text x="681" y="778" text-anchor="middle" class="t-mono">secondary</text>
+          <rect class="inner" x="734" y="756" width="90" height="34" rx="6" />
+          <text x="779" y="778" text-anchor="middle" class="t-mono">secondary</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="830" width="26" height="12" rx="3" />
+          <text x="74" y="841" class="t-label">your server, you run it</text>
+          <rect class="managed" x="250" y="830" width="26" height="12" rx="3" />
+          <text x="284" y="841" class="t-label">rented managed service, runs on the provider's machines</text>
+        </svg>
+      </div>
+      <figcaption>
+        Only the solid boxes are servers you pay for and maintain. Bad traffic is dropped as early
+        as possible: floods and attacks at the WAF, unauthenticated or excessive calls at the gateway,
+        and only then per-user rules in your app. All three app servers share the same Valkey keys
+        (<code>ratelimit:&lt;algorithm&gt;:&lt;ip&gt;</code>, later <code>cache:*</code>), so a user's
+        limit holds no matter which server handles the request.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 1b. Layered limits -->
+  <section>
+    <h2>Which layer limits what</h2>
+    <p>
+      Each layer stops a different kind of traffic, and the cheaper the layer, the earlier it runs.
+      The thresholds get tighter the closer a request gets to your code.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Limits by</th><th>Example rule</th><th>Knows your users?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WAF</td>
+            <td>IP, country, bot score, attack patterns</td>
+            <td>Block an IP above 100 req/s; block SQL injection payloads</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>API gateway</td>
+            <td>IP, API key, route</td>
+            <td>20 req/s per IP; 10,000 req/day per API key</td>
+            <td>Partly: API keys</td>
+          </tr>
+          <tr>
+            <td>Your app (this repo)</td>
+            <td>IP today; user, plan or action later</td>
+            <td>3 req/s per IP; 5 login attempts per account per 15 min</td>
+            <td>Yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Client IP through the chain.</strong> With the CDN, gateway and load balancer in front,
+      the connection your app sees always comes from the load balancer. The real user IP travels in
+      <code>X-Forwarded-For</code>, so <code>TRUST_PROXY</code> must equal the number of proxies in
+      front of the app (3 here), or the app should read the edge's own header (Cloudflare sends
+      <code>CF-Connecting-IP</code>). The app servers should also accept connections only from the
+      load balancer, so nobody can skip the edge and forge that header.
+    </p>
+  </section>
+
+
+  <!-- 2. Inside one app server -->
+  <section>
+    <h2>Inside one api container</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 330" role="img" aria-label="A request passes requestId and requestLogger, then the rate limiter. The rate limiter asks the circuit breaker: when closed it checks the shared Valkey, when open it uses this server's in-memory Map. Allowed requests continue to the controller and service; over-limit requests get 429.">
+          <defs>
+            <marker id="h2-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha2-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw2-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Middleware chain -->
+          <rect class="own" x="16" y="24" width="116" height="48" rx="8" />
+          <text x="74" y="53" text-anchor="middle">request</text>
+          <line class="edge" x1="132" y1="48" x2="174" y2="48" marker-end="url(#h2-v3)" />
+
+          <rect class="own" x="176" y="24" width="116" height="48" rx="8" />
+          <text x="234" y="53" text-anchor="middle" class="mono" style="font-family:var(--font-mono);font-size:12px">requestId</text>
+          <line class="edge" x1="292" y1="48" x2="334" y2="48" marker-end="url(#h2-v3)" />
+
+          <rect class="own" x="336" y="24" width="116" height="48" rx="8" />
+          <text x="394" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">requestLogger</text>
+          <line class="edge" x1="452" y1="48" x2="494" y2="48" marker-end="url(#h2-v3)" />
+
+          <rect class="hl" x="496" y="24" width="116" height="48" rx="8" />
+          <text x="554" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">rateLimiter</text>
+          <line class="edge" x1="612" y1="48" x2="654" y2="48" marker-end="url(#h2-v3)" />
+          <text x="633" y="40" text-anchor="middle" class="t-label" style="font-size:10.5px">allowed</text>
+
+          <rect class="own" x="656" y="24" width="116" height="48" rx="8" />
+          <text x="714" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">controller</text>
+          <line class="edge" x1="772" y1="48" x2="814" y2="48" marker-end="url(#h2-v3)" />
+
+          <rect class="own" x="816" y="24" width="116" height="48" rx="8" />
+          <text x="874" y="53" text-anchor="middle" style="font-family:var(--font-mono);font-size:12px">service</text>
+
+          <!-- Over limit -> 429 -->
+          <line class="edge" x1="600" y1="72" x2="814" y2="140" marker-end="url(#h2-v3)" />
+          <text x="742" y="98" class="t-label">over limit</text>
+          <rect class="own" x="816" y="120" width="116" height="52" rx="8" />
+          <text x="874" y="143" text-anchor="middle" class="t-title">429</text>
+          <text x="874" y="161" text-anchor="middle" class="t-mono">+ Retry-After</text>
+
+          <!-- Limiter -> breaker -->
+          <line class="edge" x1="554" y1="72" x2="554" y2="118" marker-end="url(#h2-v3)" />
+          <text x="564" y="100" class="t-label">which store?</text>
+          <rect class="own" x="474" y="120" width="160" height="52" rx="8" />
+          <text x="554" y="143" text-anchor="middle" class="t-title">circuit breaker</text>
+          <text x="554" y="161" text-anchor="middle" class="t-mono t-warn">planned</text>
+
+          <!-- Breaker -> stores -->
+          <line class="edge-accent" x1="500" y1="172" x2="384" y2="250" marker-end="url(#ha2-v3)" />
+          <text x="430" y="202" text-anchor="end" class="t-label t-accent">CLOSED</text>
+          <line class="edge-warn" x1="608" y1="172" x2="736" y2="250" marker-end="url(#hw2-v3)" />
+          <text x="684" y="202" class="t-label t-warn">OPEN</text>
+
+          <rect class="hl" x="232" y="252" width="232" height="60" rx="8" />
+          <text x="348" y="277" text-anchor="middle" class="t-title">Valkey, shared</text>
+          <text x="348" y="297" text-anchor="middle" class="t-mono">exact limit across all servers</text>
+
+          <rect class="hl-warn" x="640" y="252" width="232" height="60" rx="8" />
+          <text x="756" y="277" text-anchor="middle" class="t-title">in-memory Map</text>
+          <text x="756" y="297" text-anchor="middle" class="t-mono">this server only · approximate</text>
+        </svg>
+      </div>
+      <figcaption>
+        Today the rate limiter talks to Valkey directly and fails open when it can't. The planned
+        circuit breaker sits between them: while Valkey is healthy nothing changes; when it isn't, each
+        server limits on its own with the in-memory algorithms that already exist, so users
+        get up to 3× the limit instead of unlimited, and no request waits on a dead connection.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 3. Breaker states -->
+  <section>
+    <h2>How the breaker decides</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 760 350" role="img" aria-label="Circuit breaker state machine. Closed uses Valkey; after 5 failures in a row it moves to Open, which skips Valkey and uses the in-memory Map. After 10 seconds it moves to Half-open and lets one trial request through: success returns to Closed, failure returns to Open.">
+          <defs>
+            <marker id="h3-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha3-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw3-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- CLOSED -->
+          <rect class="hl" x="40" y="40" width="200" height="80" rx="40" />
+          <text x="140" y="74" text-anchor="middle" class="t-title">CLOSED</text>
+          <text x="140" y="96" text-anchor="middle" class="t-mono">use Valkey</text>
+
+          <!-- OPEN -->
+          <rect class="hl-warn" x="520" y="40" width="200" height="80" rx="40" />
+          <text x="620" y="74" text-anchor="middle" class="t-title">OPEN</text>
+          <text x="620" y="96" text-anchor="middle" class="t-mono">skip Valkey · use Map · 0 ms</text>
+
+          <!-- HALF-OPEN -->
+          <rect class="own" x="280" y="248" width="200" height="80" rx="40" />
+          <text x="380" y="282" text-anchor="middle" class="t-title">HALF-OPEN</text>
+          <text x="380" y="304" text-anchor="middle" class="t-mono">one trial request</text>
+
+          <!-- CLOSED -> OPEN -->
+          <line class="edge-warn" x1="240" y1="80" x2="518" y2="80" marker-end="url(#hw3-v3)" />
+          <text x="380" y="70" text-anchor="middle" class="t-label t-warn">5 failures in a row</text>
+
+          <!-- OPEN -> HALF-OPEN -->
+          <line class="edge" x1="590" y1="120" x2="448" y2="246" marker-end="url(#h3-v3)" />
+          <text x="508" y="170" text-anchor="end" class="t-label">after 10 s</text>
+
+          <!-- HALF-OPEN -> OPEN -->
+          <line class="edge-warn" x1="470" y1="262" x2="650" y2="122" marker-end="url(#hw3-v3)" />
+          <text x="600" y="214" class="t-label t-warn">trial fails</text>
+
+          <!-- HALF-OPEN -> CLOSED -->
+          <line class="edge-accent" x1="310" y1="246" x2="170" y2="122" marker-end="url(#ha3-v3)" />
+          <text x="226" y="198" text-anchor="end" class="t-label t-accent">trial succeeds</text>
+        </svg>
+      </div>
+      <figcaption>
+        During an outage only the first few requests pay the 200 ms timeout; after that the breaker
+        skips Valkey instantly. It logs once when it opens and once when it closes, instead of
+        once per request, and a recovering Valkey gets one trial request instead of a flood.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 3b. Database replication -->
+  <section>
+    <h2>Database: replication is built into MongoDB</h2>
+    <p>
+      An Atlas cluster is never one database server. Even the free tier is a
+      <strong>replica set</strong>: three copies of the same data, each in a different availability
+      zone (a separate datacenter in the same region). MongoDB copies every write from the primary to
+      the secondaries itself, so you don't write any replication code and don't need a queue for it.
+    </p>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 380" role="img" aria-label="All three app servers send writes to the primary node. The primary records each write in its oplog; the two secondaries in other availability zones copy the oplog and apply it. Once two of three nodes have the write, the primary acknowledges the app. Reads can optionally go to secondaries. All nodes exchange heartbeats every 2 seconds.">
+          <defs>
+            <marker id="h4-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha4-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- App servers -->
+          <rect class="own" x="80" y="16" width="200" height="50" rx="8" />
+          <text x="180" y="37" text-anchor="middle" class="t-title">Server A</text>
+          <text x="180" y="55" text-anchor="middle" class="t-mono">api + MongoDB driver</text>
+          <rect class="own" x="380" y="16" width="200" height="50" rx="8" />
+          <text x="480" y="37" text-anchor="middle" class="t-title">Server B</text>
+          <text x="480" y="55" text-anchor="middle" class="t-mono">api + MongoDB driver</text>
+          <rect class="own" x="680" y="16" width="200" height="50" rx="8" />
+          <text x="780" y="37" text-anchor="middle" class="t-title">Server C</text>
+          <text x="780" y="55" text-anchor="middle" class="t-mono">api + MongoDB driver</text>
+
+          <!-- Writes: every server to the primary -->
+          <line class="edge-accent" x1="230" y1="66" x2="410" y2="192" marker-end="url(#ha4-v3)" />
+          <line class="edge-accent" x1="730" y1="66" x2="550" y2="192" marker-end="url(#ha4-v3)" />
+          <line class="edge-accent" x1="464" y1="66" x2="464" y2="192" marker-end="url(#ha4-v3)" />
+          <text x="456" y="128" text-anchor="end" class="t-label t-accent">① write</text>
+          <line class="edge" x1="496" y1="192" x2="496" y2="68" marker-end="url(#h4-v3)" />
+          <text x="504" y="128" class="t-label">③ ack</text>
+
+          <!-- Optional reads from secondaries -->
+          <line class="edge" x1="130" y1="66" x2="130" y2="192" marker-end="url(#h4-v3)" style="stroke-dasharray:3 4" />
+          <text x="138" y="128" class="t-label">reads, optional</text>
+          <line class="edge" x1="830" y1="66" x2="830" y2="192" marker-end="url(#h4-v3)" style="stroke-dasharray:3 4" />
+          <text x="822" y="128" text-anchor="end" class="t-label">reads, optional</text>
+
+          <!-- Nodes -->
+          <rect class="managed" x="40" y="194" width="260" height="112" rx="10" />
+          <text x="56" y="218" class="t-title">Secondary</text>
+          <text x="56" y="237" class="t-mono">full copy of the data</text>
+          <rect class="inner" x="56" y="248" width="228" height="26" rx="5" />
+          <text x="66" y="266" class="t-mono">oplog  w1 w2 w3</text>
+          <text x="56" y="296" class="t-label">availability zone 1</text>
+
+          <rect class="hl" x="350" y="194" width="260" height="112" rx="10" />
+          <text x="366" y="218" class="t-title">Primary</text>
+          <text x="366" y="237" class="t-mono">only node that accepts writes</text>
+          <rect class="inner" x="366" y="248" width="228" height="26" rx="5" />
+          <text x="376" y="266" class="t-mono">oplog  w1 w2 w3 w4</text>
+          <text x="366" y="296" class="t-label">availability zone 2</text>
+
+          <rect class="managed" x="660" y="194" width="260" height="112" rx="10" />
+          <text x="676" y="218" class="t-title">Secondary</text>
+          <text x="676" y="237" class="t-mono">full copy of the data</text>
+          <rect class="inner" x="676" y="248" width="228" height="26" rx="5" />
+          <text x="686" y="266" class="t-mono">oplog  w1 w2 w3 w4</text>
+          <text x="676" y="296" class="t-label">availability zone 3</text>
+
+          <!-- Oplog replication -->
+          <line class="edge-accent" x1="350" y1="261" x2="302" y2="261" marker-end="url(#ha4-v3)" />
+          <text x="326" y="184" text-anchor="middle" class="t-label t-accent">② oplog</text>
+          <line class="edge-accent" x1="610" y1="261" x2="658" y2="261" marker-end="url(#ha4-v3)" />
+          <text x="634" y="184" text-anchor="middle" class="t-label t-accent">② oplog</text>
+
+          <!-- Heartbeats -->
+          <line class="edge" x1="170" y1="306" x2="170" y2="336" style="stroke-dasharray:2 3" />
+          <line class="edge" x1="480" y1="306" x2="480" y2="336" style="stroke-dasharray:2 3" />
+          <line class="edge" x1="790" y1="306" x2="790" y2="336" style="stroke-dasharray:2 3" />
+          <line class="edge" x1="170" y1="336" x2="790" y2="336" style="stroke-dasharray:2 3" />
+          <text x="480" y="362" text-anchor="middle" class="t-label">heartbeats every 2 s · a silent primary triggers an election</text>
+        </svg>
+      </div>
+      <figcaption>
+        ① Every write goes to the primary, which applies it and records it in its <strong>oplog</strong>
+        (operation log). ② The secondaries continuously copy the oplog and replay it, usually within
+        milliseconds. ③ With write concern <code>majority</code> (the default since MongoDB 5.0), the
+        app only gets its acknowledgement once 2 of the 3 nodes have the write, so an acknowledged
+        write survives the primary dying. In the picture, the zone 1 secondary is still catching up on
+        <code>w4</code>; that's normal.
+      </figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Question</th><th>Answer</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Another load balancer for the DB?</td>
+            <td>No. The MongoDB driver inside each app is topology-aware: it gets the list of nodes from the
+              <code>mongodb+srv://</code> connection string, watches which one is primary, sends writes there,
+              and switches automatically after a failover.</td>
+          </tr>
+          <tr>
+            <td>A queue to copy writes?</td>
+            <td>No. The oplog <em>is</em> the replication log, and the secondaries pull from it themselves.</td>
+          </tr>
+          <tr>
+            <td>When would a queue help?</td>
+            <td>For work that doesn't have to happen inside the request: sending emails, absorbing a burst of
+              writes, calling slow third parties. That's a separate design choice, not replication.</td>
+          </tr>
+          <tr>
+            <td>Can the 3 servers read from secondaries?</td>
+            <td>Yes, with read preference <code>secondaryPreferred</code>. It spreads read load, but a read can
+              be a few milliseconds behind the latest write. Keep the default <code>primary</code> for anything
+              that must see the user's own just-written data.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3c. Failover timeline -->
+  <section>
+    <h2>When the primary dies</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 440" role="img" aria-label="Failover timeline. Node 1 is primary and crashes. After 10 seconds without heartbeats, node 2 asks node 3 for its vote and becomes the new primary. The app's next write to node 1 fails with a retryable error; the driver finds node 2 as the new primary and retries the write once, which succeeds.">
+          <defs>
+            <marker id="h5-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha5-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="hw5-v3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-warn" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lane headers -->
+          <rect class="own" x="150" y="16" width="160" height="40" rx="8" />
+          <text x="230" y="41" text-anchor="middle" class="t-title">app (driver)</text>
+          <rect class="hl" x="400" y="16" width="160" height="40" rx="8" />
+          <text x="480" y="41" text-anchor="middle" class="t-title">node 1 · primary</text>
+          <rect class="managed" x="600" y="16" width="160" height="40" rx="8" />
+          <text x="680" y="41" text-anchor="middle" class="t-title">node 2</text>
+          <rect class="managed" x="790" y="16" width="150" height="40" rx="8" />
+          <text x="865" y="41" text-anchor="middle" class="t-title">node 3</text>
+
+          <!-- Lanes -->
+          <line x1="230" y1="56" x2="230" y2="420" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="480" y1="56" x2="480" y2="148" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="680" y1="56" x2="680" y2="420" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="865" y1="56" x2="865" y2="420" stroke="var(--line)" stroke-width="1.5" />
+
+          <!-- Time axis -->
+          <text x="16" y="94" class="t-label">0 s</text>
+          <text x="16" y="194" class="t-label">~10 s</text>
+          <text x="16" y="288" class="t-label">~12 s</text>
+
+          <!-- Normal write -->
+          <line class="edge-accent" x1="230" y1="90" x2="476" y2="90" marker-end="url(#ha5-v3)" />
+          <text x="352" y="82" text-anchor="middle" class="t-label t-accent">write · ok</text>
+
+          <!-- Crash -->
+          <line x1="468" y1="140" x2="492" y2="164" stroke="var(--warn)" stroke-width="3" />
+          <line x1="492" y1="140" x2="468" y2="164" stroke="var(--warn)" stroke-width="3" />
+          <text x="504" y="157" class="t-label t-warn">crashes</text>
+
+          <!-- Silence -->
+          <line class="edge-warn" x1="680" y1="190" x2="865" y2="190" />
+          <text x="772" y="182" text-anchor="middle" class="t-label t-warn">no heartbeat from node 1</text>
+
+          <!-- Election -->
+          <line class="edge" x1="680" y1="226" x2="861" y2="226" marker-end="url(#h5-v3)" />
+          <text x="772" y="218" text-anchor="middle" class="t-label">vote for me?</text>
+          <line class="edge" x1="865" y1="256" x2="684" y2="256" marker-end="url(#h5-v3)" />
+          <text x="772" y="248" text-anchor="middle" class="t-label">yes</text>
+          <rect class="hl" x="600" y="270" width="160" height="30" rx="6" />
+          <text x="680" y="290" text-anchor="middle" class="t-title">new primary</text>
+
+          <!-- Failed write -->
+          <line class="edge-warn" x1="230" y1="330" x2="470" y2="330" marker-end="url(#hw5-v3)" />
+          <text x="352" y="322" text-anchor="middle" class="t-label t-warn">write fails · retryable error</text>
+
+          <!-- Retry -->
+          <line class="edge-accent" x1="230" y1="370" x2="676" y2="370" marker-end="url(#ha5-v3)" />
+          <text x="452" y="362" text-anchor="middle" class="t-label t-accent">driver finds new primary · retries once</text>
+          <line class="edge" x1="680" y1="404" x2="234" y2="404" marker-end="url(#h5-v3)" />
+          <text x="452" y="396" text-anchor="middle" class="t-label">ack · the user never sees an error</text>
+        </svg>
+      </div>
+      <figcaption>
+        With default settings a secondary waits 10 seconds without heartbeats before calling an
+        election, and a new primary is usually in place within about 12 seconds. During that window
+        writes wait instead of failing: the driver holds them while it looks for a primary
+        (<code>serverSelectionTimeoutMS</code>, 30 s by default), and <code>retryWrites=true</code>
+        (on by default) retries a write that was cut off once. Reads with
+        <code>secondaryPreferred</code> keep working throughout.
+      </figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>App setting</th><th>Value</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Connection string</td>
+            <td><code>mongodb+srv://…</code></td>
+            <td>Lists every node via DNS, so the driver can find a new primary itself</td>
+          </tr>
+          <tr>
+            <td><code>retryWrites</code></td>
+            <td><code>true</code> (default)</td>
+            <td>A write cut off by a failover is retried once on the new primary</td>
+          </tr>
+          <tr>
+            <td>Write concern <code>w</code></td>
+            <td><code>majority</code> (default)</td>
+            <td>Acknowledged writes are on 2 of 3 nodes and survive a failover</td>
+          </tr>
+          <tr>
+            <td>Read preference</td>
+            <td><code>primary</code>, or <code>secondaryPreferred</code> for read-heavy routes</td>
+            <td>Trade always-fresh reads for spreading load</td>
+          </tr>
+          <tr>
+            <td><code>serverSelectionTimeoutMS</code></td>
+            <td>e.g. <code>15000</code></td>
+            <td>How long a request waits for a primary before failing; keep it below your HTTP timeout</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Beyond one replica set.</strong> To survive a whole region going down, Atlas can place
+      the nodes in two or three regions instead of three zones. To grow past what one primary can
+      write, Atlas shards the data across several replica sets and runs routers (<code>mongos</code>)
+      in front of them; the driver talks to the routers. Neither is needed at this size.
+    </p>
+  </section>
+
+  <!-- 4. Failure matrix -->
+  <section>
+    <h2>If one piece fails</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Server A</td>
+            <td><span class="pill up">up</span></td>
+            <td>Load balancer sees <code>/health</code> fail and sends all traffic to B and C. Slower, not down.</td>
+          </tr>
+          <tr>
+            <td>Server B or C</td>
+            <td><span class="pill up">up</span></td>
+            <td>Same: the other two keep serving.</td>
+          </tr>
+          <tr>
+            <td>Valkey primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>Provider promotes the replica in seconds. Meanwhile requests are allowed (today) or limited per server (with the breaker).</td>
+          </tr>
+          <tr>
+            <td>All of Valkey</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>API keeps working. App rate limits are off (today) or per server, up to 3× (with the breaker). WAF and gateway limits still apply. Cache misses go to MongoDB.</td>
+          </tr>
+          <tr>
+            <td>MongoDB primary</td>
+            <td><span class="pill up">up</span></td>
+            <td>A secondary is elected primary in about 12 s. The driver holds writes and retries them once, so users see a slow request, not an error. Cached reads still come from Valkey.</td>
+          </tr>
+          <tr>
+            <td>MongoDB secondary</td>
+            <td><span class="pill up">up</span></td>
+            <td>No visible effect. Atlas replaces the node, and it copies the data back from the others.</td>
+          </tr>
+          <tr>
+            <td>One CDN, gateway or LB machine</td>
+            <td><span class="pill up">up</span></td>
+            <td>Each is run on many machines by the provider; a failed one is replaced without you noticing.</td>
+          </tr>
+          <tr>
+            <td>A whole CDN, gateway or LB service</td>
+            <td><span class="pill down">down</span></td>
+            <td>Every request passes through all three, so a provider-wide outage of any of them makes the API unreachable. Rare, but these are the layers you can't route around without a second provider.</td>
+          </tr>
+          <tr>
+            <td>Whole provider region</td>
+            <td><span class="pill down">down</span></td>
+            <td>Surviving it needs a second region with DNS failover, usually not worth it at this size.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Built vs planned -->
+  <section>
+    <h2>What exists in the repo today</h2>
+    <div class="status">
+      <div class="built">
+        <h3>Built and tested</h3>
+        <ul>
+          <li>Express 5 API with the users CRUD module</li>
+          <li>Five rate limit algorithms, in memory and as Valkey Lua scripts</li>
+          <li>Per-IP keys, IPv6 grouped by <code>/64</code>, <code>TRUST_PROXY</code></li>
+          <li>Fail open when Valkey is unreachable, <code>/health</code> shows the store</li>
+          <li>Dockerfile and <code>docker-compose.yml</code> with Valkey</li>
+        </ul>
+      </div>
+      <div class="planned">
+        <h3>Planned</h3>
+        <ul>
+          <li>Circuit breaker with in-memory fallback</li>
+          <li>MongoDB Atlas connection with <code>retryWrites</code> and <code>w: majority</code></li>
+          <li>Models and <code>cache:*</code> cache-aside</li>
+          <li>CDN + WAF in front of the API domain</li>
+          <li>API gateway with API keys and a coarse per-IP limit</li>
+          <li>Managed load balancer and managed Valkey</li>
+          <li>Real client IP through the proxy chain, servers reachable only from the load balancer</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </article>
+  <article class="version" data-version="v4" aria-label="Architecture v4" hidden>
+
+  <header>
+    <span class="eyebrow">rate_limitar · architecture v4 · Blog service, one login</span>
+    <h1>A second service, one login: the blog joins over GraphQL</h1>
+    <p class="lede">
+      The blog runs as its own service on AWS AppSync, next to the REST API, and reads and writes
+      its own database in the same MongoDB cluster. Users sign in once with Amazon Cognito, and the
+      same token works on the REST API and the blog; no service keeps its own passwords.
+    </p>
+    <p class="builds-on">
+      Builds on <a href="#v3">v3</a>. Everything not shown here is unchanged: the edge and
+      layered limits, the REST rate limiter and breaker, and MongoDB replication and failover.
+    </p>
+
+    <div class="changes"><strong>New since v3</strong><ul><li>Amazon Cognito user pool: one sign-in, one token for REST and GraphQL</li><li>Blog service on AWS AppSync with Lambda resolvers</li><li>Separate blog database and DB user in the same Atlas cluster</li><li>GraphQL schema, resolver map and design decisions</li><li>Failure rows for Cognito, AppSync and the shared connection limit</li></ul></div>
+  </header>
+
+  <!-- 1. Topology -->
+  <section>
+    <h2>Two services side by side</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 780" role="img" aria-label="The client logs in once with Cognito and gets a JWT. Every call goes through CloudFront and WAF, then either to the REST path (API gateway, load balancer, app servers A, B, C) or the GraphQL path (AppSync, then Lambda resolvers for the blog). Both paths reach Valkey and one MongoDB Atlas cluster over a private network; the REST API uses the app database and the blog uses its own blog database.">
+          <defs>
+            <marker id="h-v4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha-v4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Client -->
+          <rect class="own" x="380" y="14" width="200" height="48" rx="24" />
+          <text x="480" y="36" text-anchor="middle" class="t-title">Web / mobile client</text>
+          <text x="480" y="53" text-anchor="middle" class="t-mono">holds one JWT</text>
+
+          <!-- Cognito -->
+          <rect class="hl" x="40" y="10" width="240" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="160" y="34" text-anchor="middle" class="t-title">Amazon Cognito</text>
+          <text x="160" y="53" text-anchor="middle" class="t-mono">user pool · the only login</text>
+          <line class="edge-accent" x1="378" y1="30" x2="284" y2="30" marker-end="url(#ha-v4)" />
+          <text x="331" y="22" text-anchor="middle" class="t-label t-accent">① log in</text>
+          <line class="edge-accent" x1="284" y1="50" x2="378" y2="50" marker-end="url(#ha-v4)" />
+          <text x="331" y="68" text-anchor="middle" class="t-label t-accent">JWT</text>
+
+          <line class="edge" x1="480" y1="62" x2="480" y2="104" marker-end="url(#h-v4)" />
+          <text x="490" y="88" class="t-label">② Bearer JWT on every call</text>
+
+          <!-- Edge -->
+          <rect class="managed" x="160" y="106" width="640" height="60" rx="10" />
+          <text x="480" y="131" text-anchor="middle" class="t-title">Edge · CloudFront + WAF</text>
+          <text x="480" y="152" text-anchor="middle" class="t-mono">TLS · caching · attack and rate rules</text>
+
+          <!-- Split -->
+          <line class="edge" x1="330" y1="166" x2="250" y2="216" marker-end="url(#h-v4)" />
+          <text x="282" y="198" text-anchor="end" class="t-label">api.domain.com</text>
+          <line class="edge-accent" x1="630" y1="166" x2="710" y2="216" marker-end="url(#ha-v4)" />
+          <text x="678" y="198" class="t-label t-accent">blog.domain.com/graphql</text>
+
+          <!-- REST path -->
+          <rect class="managed" x="60" y="218" width="380" height="64" rx="10" />
+          <text x="250" y="244" text-anchor="middle" class="t-title">API gateway (REST)</text>
+          <text x="250" y="265" text-anchor="middle" class="t-mono">JWT authorizer · coarse limits</text>
+          <line class="edge" x1="250" y1="282" x2="250" y2="326" marker-end="url(#h-v4)" />
+          <rect class="managed" x="60" y="328" width="380" height="56" rx="10" />
+          <text x="250" y="352" text-anchor="middle" class="t-title">Load balancer</text>
+          <text x="250" y="372" text-anchor="middle" class="t-mono">weighted A=2 · B=1 · C=1</text>
+          <line class="edge" x1="250" y1="384" x2="250" y2="428" marker-end="url(#h-v4)" />
+          <rect class="own" x="60" y="430" width="380" height="76" rx="10" />
+          <text x="250" y="456" text-anchor="middle" class="t-title">REST API · servers A, B, C</text>
+          <text x="250" y="476" text-anchor="middle" class="t-mono">Express (this repo) · verifies JWT</text>
+          <text x="250" y="494" text-anchor="middle" class="t-mono">rate limiter · users</text>
+
+          <!-- GraphQL path -->
+          <rect class="hl" x="520" y="218" width="380" height="64" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="244" text-anchor="middle" class="t-title">AWS AppSync (GraphQL)</text>
+          <text x="710" y="265" text-anchor="middle" class="t-mono">Cognito auth mode · WAF rate rule</text>
+          <line class="edge-accent" x1="710" y1="282" x2="710" y2="428" marker-end="url(#ha-v4)" />
+          <text x="720" y="352" class="t-label t-accent">invokes resolver</text>
+          <text x="720" y="370" class="t-label t-accent">with identity.sub</text>
+          <rect class="hl" x="520" y="430" width="380" height="76" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="456" text-anchor="middle" class="t-title">Blog service · Lambda resolvers</text>
+          <text x="710" y="476" text-anchor="middle" class="t-mono">listPosts · createPost · addComment</text>
+          <text x="710" y="494" text-anchor="middle" class="t-mono">MongoDB driver, pooled connection</text>
+
+          <!-- Private network -->
+          <line class="edge" x1="250" y1="506" x2="250" y2="546" />
+          <line class="edge-accent" x1="710" y1="506" x2="710" y2="546" />
+          <line class="bus" x1="40" y1="550" x2="920" y2="550" />
+          <text x="920" y="572" text-anchor="end" class="t-label">private network (VPC, peered with Atlas)</text>
+
+          <line class="edge" x1="170" y1="554" x2="170" y2="604" marker-end="url(#h-v4)" />
+          <line class="edge" x1="620" y1="554" x2="620" y2="604" marker-end="url(#h-v4)" />
+
+          <!-- Valkey -->
+          <rect class="managed" x="40" y="606" width="260" height="110" rx="10" />
+          <text x="170" y="634" text-anchor="middle" class="t-title">Valkey (ElastiCache)</text>
+          <text x="170" y="656" text-anchor="middle" class="t-mono">ratelimit:* · cache:*</text>
+          <text x="170" y="676" text-anchor="middle" class="t-mono">primary + replica</text>
+
+          <!-- MongoDB, one cluster, two databases -->
+          <rect class="managed" x="340" y="606" width="580" height="110" rx="10" />
+          <text x="630" y="632" text-anchor="middle" class="t-title">MongoDB Atlas · one cluster (replica set)</text>
+          <rect class="inner" x="360" y="646" width="260" height="54" rx="6" />
+          <text x="376" y="668" class="t-title">database app</text>
+          <text x="376" y="688" class="t-mono">users · owned by REST API</text>
+          <rect class="hl" x="640" y="646" width="260" height="54" rx="6" />
+          <text x="656" y="668" class="t-title">database blog</text>
+          <text x="656" y="688" class="t-mono">posts · comments · blog only</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="742" width="26" height="12" rx="3" />
+          <text x="74" y="753" class="t-label">your servers</text>
+          <rect class="managed" x="190" y="742" width="26" height="12" rx="3" />
+          <text x="224" y="753" class="t-label">managed service</text>
+          <rect class="hl" x="370" y="742" width="26" height="12" rx="3" />
+          <text x="404" y="753" class="t-label">new in v4: login and blog path</text>
+        </svg>
+      </div>
+      <figcaption>
+        The client logs in once and sends the same token to both services. The REST path is
+        unchanged from v3. The blog path has no servers of your own: AppSync receives the GraphQL
+        request, checks the token itself, and calls a Lambda function that reads and writes the
+        <code>blog</code> database. Both services share the Atlas cluster and Valkey, but each owns
+        its own data.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 1a. Shared login -->
+  <section>
+    <h2>One login for every service</h2>
+    <p>
+      Cognito is the only place that knows passwords. It hands the client a signed token (JWT)
+      containing the user's id (<code>sub</code>), email and groups. Every service checks the
+      token's signature against Cognito's public keys, which they download once and cache, so
+      checking a token never calls Cognito and adds no network hop.
+    </p>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 440" role="img" aria-label="Sequence: the client signs in with Cognito and receives an ID token, access token and refresh token. It calls the REST API with the access token, which the API verifies with cached public keys. It calls AppSync with the same token, which AppSync validates natively and passes the user's id to the resolver. When the token expires the client uses the refresh token to get new ones from Cognito.">
+          <defs>
+            <marker id="h6-v4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha6-v4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lane headers -->
+          <rect class="own" x="30" y="16" width="160" height="40" rx="8" />
+          <text x="110" y="41" text-anchor="middle" class="t-title">client</text>
+          <rect class="hl" x="250" y="16" width="160" height="40" rx="8" />
+          <text x="330" y="41" text-anchor="middle" class="t-title">Cognito</text>
+          <rect class="own" x="480" y="16" width="170" height="40" rx="8" />
+          <text x="565" y="41" text-anchor="middle" class="t-title">REST API</text>
+          <rect class="hl" x="740" y="16" width="190" height="40" rx="8" />
+          <text x="835" y="41" text-anchor="middle" class="t-title">AppSync + blog Lambda</text>
+
+          <line x1="110" y1="56" x2="110" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="330" y1="56" x2="330" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="565" y1="56" x2="565" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="835" y1="56" x2="835" y2="424" stroke="var(--line)" stroke-width="1.5" />
+
+          <!-- Sign in -->
+          <line class="edge-accent" x1="110" y1="88" x2="326" y2="88" marker-end="url(#ha6-v4)" />
+          <text x="218" y="80" text-anchor="middle" class="t-label t-accent">① sign in</text>
+          <line class="edge-accent" x1="330" y1="120" x2="114" y2="120" marker-end="url(#ha6-v4)" />
+          <text x="218" y="140" text-anchor="middle" class="t-label t-accent">② access + ID token (1 h),</text>
+          <text x="218" y="155" text-anchor="middle" class="t-label t-accent">refresh token (30 days)</text>
+
+          <!-- REST call -->
+          <line class="edge" x1="110" y1="190" x2="561" y2="190" marker-end="url(#h6-v4)" />
+          <text x="336" y="182" text-anchor="middle" class="t-label">③ GET /api/v1/users/me · Bearer token</text>
+          <text x="577" y="214" class="t-label">verify signature</text>
+          <text x="577" y="230" class="t-label">with cached keys</text>
+          <line class="edge" x1="565" y1="248" x2="114" y2="248" marker-end="url(#h6-v4)" />
+          <text x="336" y="240" text-anchor="middle" class="t-label">200 · profile of sub</text>
+
+          <!-- GraphQL call -->
+          <line class="edge-accent" x1="110" y1="290" x2="831" y2="290" marker-end="url(#ha6-v4)" />
+          <text x="470" y="282" text-anchor="middle" class="t-label t-accent">④ query { myPosts } · the same token</text>
+          <text x="823" y="314" text-anchor="end" class="t-label t-accent">AppSync checks it,</text>
+          <text x="823" y="330" text-anchor="end" class="t-label t-accent">Lambda gets identity.sub</text>
+          <line class="edge-accent" x1="835" y1="348" x2="114" y2="348" marker-end="url(#ha6-v4)" />
+          <text x="470" y="340" text-anchor="middle" class="t-label t-accent">posts where authorId = sub</text>
+
+          <!-- Refresh -->
+          <line class="edge" x1="110" y1="398" x2="326" y2="398" marker-end="url(#h6-v4)" style="stroke-dasharray:5 4" />
+          <text x="218" y="390" text-anchor="middle" class="t-label">⑤ expired → refresh token</text>
+        </svg>
+      </div>
+      <figcaption>
+        Signing in happens once. From then on the client attaches the same access token to REST and
+        GraphQL calls, and quietly swaps it for a fresh one with the refresh token before it
+        expires. Logging out revokes the refresh token, so no new access tokens can be issued; an
+        access token already handed out stays valid until it expires, which is why it's kept short.
+      </figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Where</th><th>How it checks the token</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>API gateway (REST)</td><td>JWT authorizer pointed at the Cognito user pool; rejects bad tokens before they reach your servers</td></tr>
+          <tr><td>Express app (this repo)</td><td>Verifies again with <code>aws-jwt-verify</code> (keys cached in memory) and puts <code>req.user = { sub, email, groups }</code> on the request</td></tr>
+          <tr><td>AppSync</td><td>Cognito user pool auth mode, built in. Resolvers receive <code>identity.sub</code> and <code>identity.groups</code></td></tr>
+          <tr><td>Video service (later)</td><td>Same user pool, same token; nothing new to log into</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      With a real user id on every request, the app's rate limiter can key on <code>sub</code>
+      instead of IP for signed-in users, so one user can't dodge the limit by switching networks and
+      a shared office IP doesn't throttle everyone behind it.
+    </p>
+  </section>
+
+  <!-- 1b. Blog service -->
+  <section>
+    <h2>The blog service</h2>
+    <p>
+      The blog is its own service with its own code, deploys and database, even though it shares the
+      Atlas cluster for now. AppSync owns the GraphQL schema, auth and subscriptions; small Lambda
+      functions hold the logic and talk to MongoDB.
+    </p>
+    <figure>
+      <div class="canvas code">
+<pre><code>type Post {
+  id: ID!
+  title: String!
+  body: String!
+  authorId: ID!            # Cognito sub
+  authorName: String!      # copied at write time, no cross-database join
+  tags: [String!]!
+  createdAt: AWSDateTime!
+  comments(limit: Int, nextToken: String): CommentPage!
+}
+
+type Comment { id: ID!  postId: ID!  authorId: ID!  body: String!  createdAt: AWSDateTime! }
+
+type Query {
+  post(id: ID!): Post
+  posts(limit: Int, nextToken: String): PostPage!
+  myPosts(limit: Int, nextToken: String): PostPage!
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): Post!
+  updatePost(id: ID!, input: UpdatePostInput!): Post!     # author or admin only
+  deletePost(id: ID!): ID!                                # author or admin only
+  addComment(postId: ID!, body: String!): Comment!
+}
+
+type Subscription {
+  onComment(postId: ID!): Comment @aws_subscribe(mutations: ["addComment"])
+}</code></pre>
+      </div>
+      <figcaption>
+        Starting schema. <code>onComment</code> gives live comments over WebSockets with no extra
+        infrastructure: AppSync pushes every <code>addComment</code> to subscribed clients.
+      </figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Operation</th><th>Lambda</th><th>MongoDB (<code>blog</code> database)</th><th>Who may call it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>posts</code></td><td>listPosts</td><td><code>posts.find()</code> newest first, cursor paging</td><td>Any signed-in user</td></tr>
+          <tr><td><code>post</code></td><td>getPost</td><td><code>posts.findOne()</code> + first page of <code>comments</code></td><td>Any signed-in user</td></tr>
+          <tr><td><code>myPosts</code></td><td>listPosts</td><td><code>posts.find({ authorId: sub })</code></td><td>The signed-in user</td></tr>
+          <tr><td><code>createPost</code></td><td>createPost</td><td><code>posts.insertOne()</code>, <code>authorId</code> from the token, never from input</td><td>Any signed-in user</td></tr>
+          <tr><td><code>updatePost</code> / <code>deletePost</code></td><td>updatePost / deletePost</td><td>Filter includes <code>authorId: sub</code>, so others' posts can't match</td><td>Author, or group <code>admin</code></td></tr>
+          <tr><td><code>addComment</code></td><td>addComment</td><td><code>comments.insertOne()</code></td><td>Any signed-in user</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Decision</th><th>Choice</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Resolvers</td>
+            <td>Lambda with the MongoDB driver</td>
+            <td>AppSync has no built-in MongoDB data source (it has DynamoDB, Lambda, HTTP, OpenSearch, RDS), and Atlas's own Data API has been retired</td>
+          </tr>
+          <tr>
+            <td>Same database?</td>
+            <td>Same cluster, separate <code>blog</code> database</td>
+            <td>No extra cost now; splitting later means moving one database and changing one connection string, with no code rewrite</td>
+          </tr>
+          <tr>
+            <td>Data ownership</td>
+            <td>Blog only touches <code>blog</code></td>
+            <td>Its own Atlas database user with <code>readWrite</code> on <code>blog</code> only; it never reads or writes the REST API's <code>users</code> collection</td>
+          </tr>
+          <tr>
+            <td>Author details</td>
+            <td>Copy <code>authorName</code> onto the post</td>
+            <td>Avoids reaching into another service's data on every read; a name change can update old posts later through an event</td>
+          </tr>
+          <tr>
+            <td>Lambda ↔ Atlas connections</td>
+            <td>Client created outside the handler, <code>maxPoolSize</code> 1–5, reserved concurrency</td>
+            <td>Each Lambda instance holds its own pool; without a cap, a traffic spike can exhaust the cluster's connection limit</td>
+          </tr>
+          <tr>
+            <td>Network</td>
+            <td>Lambda in the VPC, Atlas on AWS in the same region, peering or PrivateLink</td>
+            <td>Database traffic never crosses the public internet, and latency stays low</td>
+          </tr>
+          <tr>
+            <td>Rate limiting</td>
+            <td>AWS WAF rate rule on AppSync; per-user limits in Lambda with the same Valkey if needed</td>
+            <td>GraphQL calls don't pass through the Express limiter, so the blog needs its own</td>
+          </tr>
+          <tr>
+            <td>Caching</td>
+            <td>AppSync's built-in cache for <code>posts</code> and <code>post</code>, a few minutes</td>
+            <td>Reads dominate on a blog; cached queries skip Lambda and MongoDB entirely</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 2. New failure cases -->
+  <section>
+    <h2>New ways things can fail</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Cognito</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>New sign-ins and token refreshes fail. Tokens already issued keep working until they expire (up to 1 h), because services verify them with cached keys.</td>
+          </tr>
+          <tr>
+            <td>AppSync or blog Lambdas</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>The blog is down; the REST API is unaffected, and the reverse is also true. Separate services fail separately.</td>
+          </tr>
+          <tr>
+            <td>Atlas connection limit</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>A Lambda spike opening too many connections can starve the REST API too, since they share the cluster. Capped with <code>maxPoolSize</code> and reserved concurrency.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Work for this version -->
+  <section>
+    <h2>To build for v4</h2>
+    <div class="status">
+      <div class="planned">
+        <h3>Planned</h3>
+        <ul>
+          <li>Cognito user pool, and the JWT check in Express (<code>req.user</code>)</li>
+          <li>Blog: AppSync schema, Lambda resolvers, <code>blog</code> database and its own DB user</li>
+          <li>WAF rate rule on AppSync; per-user limits in the Lambdas if needed</li>
+          <li>Rate limit by user id when signed in, by IP otherwise</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </article>
+  <article class="version" data-version="v5" aria-label="Architecture v5">
+
+  <header>
+    <span class="eyebrow">rate_limitar · architecture v5 · Team stacks, blog media</span>
+    <h1>Two teams, two stacks: the blog gets its own Valkey and S3 for images</h1>
+    <p class="lede">
+      The REST team and the blog team each own their own cache, their own database and their own
+      deploys. Blog images live in S3 and reach readers through CloudFront, so neither MongoDB
+      nor Valkey ever holds image bytes, and cached posts stay small.
+    </p>
+    <p class="builds-on">
+      Builds on <a href="#v4">v4</a>. Unchanged: one Cognito login, AppSync with Lambda resolvers,
+      the REST path and rate limiter, and MongoDB replication.
+    </p>
+
+    <div class="changes"><strong>New since v4</strong><ul><li>Ownership split: REST team and blog team stacks, shared login, edge and cluster</li><li>Valkey &quot;blog&quot; for post cache, per-user limits and view counters</li><li>S3 blog-media with direct uploads through signed URLs, and an image processor</li><li>What&#x27;s cached, how big it gets, and the eviction policy</li><li>Failure rows for each Valkey, the image processor and media delivery</li></ul></div>
+  </header>
+
+  <!-- 1. Ownership -->
+  <section>
+    <h2>Who owns what</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 740" role="img" aria-label="Shared platform on top: Cognito and CloudFront with WAF. The REST team owns the API gateway, the Express servers and Valkey rest. The blog team owns AppSync, the blog Lambdas, Valkey blog, the S3 bucket blog-media and an image processor Lambda. CloudFront serves images from S3. Both teams use one shared MongoDB Atlas cluster, each with its own database.">
+          <defs>
+            <marker id="h7-v5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha7-v5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Shared platform -->
+          <text x="40" y="18" class="t-label">shared platform</text>
+          <rect class="managed" x="40" y="28" width="260" height="72" rx="10" />
+          <text x="170" y="56" text-anchor="middle" class="t-title">Amazon Cognito</text>
+          <text x="170" y="78" text-anchor="middle" class="t-mono">one login for both teams</text>
+
+          <rect class="managed" x="350" y="28" width="260" height="72" rx="10" />
+          <text x="480" y="56" text-anchor="middle" class="t-title">CloudFront + WAF</text>
+          <text x="480" y="78" text-anchor="middle" class="t-mono">api. · blog. · media.domain.com</text>
+
+          <!-- Team columns -->
+          <rect x="30" y="126" width="440" height="440" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 5" />
+          <text x="46" y="150" class="t-label">REST team</text>
+          <rect x="490" y="126" width="440" height="440" rx="14" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 5" />
+          <text x="506" y="150" class="t-label t-accent">blog team</text>
+
+          <!-- Edge to services -->
+          <line class="edge" x1="420" y1="100" x2="258" y2="176" marker-end="url(#h7-v5)" />
+          <text x="326" y="128" text-anchor="end" class="t-label">api.</text>
+          <line class="edge-accent" x1="540" y1="100" x2="702" y2="176" marker-end="url(#ha7-v5)" />
+          <text x="636" y="128" class="t-label t-accent">blog./graphql</text>
+
+          <!-- Images from S3 via CloudFront -->
+          <polyline class="edge-accent" points="610,64 945,64 945,398 912,398" marker-end="url(#ha7-v5)" />
+          <text x="780" y="56" text-anchor="middle" class="t-label t-accent">images from S3</text>
+
+          <!-- REST column -->
+          <rect class="managed" x="50" y="178" width="390" height="52" rx="10" />
+          <text x="245" y="202" text-anchor="middle" class="t-title">API gateway</text>
+          <text x="245" y="220" text-anchor="middle" class="t-mono">JWT authorizer</text>
+          <line class="edge" x1="245" y1="230" x2="245" y2="266" marker-end="url(#h7-v5)" />
+          <rect class="own" x="50" y="268" width="390" height="62" rx="10" />
+          <text x="245" y="294" text-anchor="middle" class="t-title">Express · servers A, B, C</text>
+          <text x="245" y="314" text-anchor="middle" class="t-mono">behind the load balancer</text>
+          <line class="edge" x1="175" y1="330" x2="175" y2="368" marker-end="url(#h7-v5)" />
+          <rect class="managed" x="50" y="370" width="250" height="70" rx="10" />
+          <text x="175" y="396" text-anchor="middle" class="t-title">Valkey "rest"</text>
+          <text x="175" y="416" text-anchor="middle" class="t-mono">rate limits · REST cache</text>
+          <line class="edge" x1="380" y1="330" x2="380" y2="612" marker-end="url(#h7-v5)" />
+
+          <!-- Blog column -->
+          <rect class="hl" x="510" y="178" width="400" height="52" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="202" text-anchor="middle" class="t-title">AppSync</text>
+          <text x="710" y="220" text-anchor="middle" class="t-mono">GraphQL · Cognito auth · WAF</text>
+          <line class="edge-accent" x1="710" y1="230" x2="710" y2="266" marker-end="url(#ha7-v5)" />
+          <rect class="hl" x="510" y="268" width="400" height="62" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="294" text-anchor="middle" class="t-title">Blog Lambdas</text>
+          <text x="710" y="314" text-anchor="middle" class="t-mono">resolvers · signs upload URLs</text>
+
+          <line class="edge-accent" x1="610" y1="330" x2="610" y2="368" marker-end="url(#ha7-v5)" />
+          <rect class="hl" x="510" y="370" width="200" height="70" rx="10" style="stroke-dasharray:6 4" />
+          <text x="610" y="396" text-anchor="middle" class="t-title">Valkey "blog"</text>
+          <text x="610" y="416" text-anchor="middle" class="t-mono">post cache · limits</text>
+          <text x="610" y="432" text-anchor="middle" class="t-mono">view counters</text>
+
+          <line class="edge-accent" x1="820" y1="330" x2="820" y2="368" marker-end="url(#ha7-v5)" />
+          <text x="828" y="354" class="t-label t-accent">signed URL</text>
+          <rect class="hl" x="730" y="370" width="180" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="820" y="394" text-anchor="middle" class="t-title">S3 blog-media</text>
+          <text x="820" y="414" text-anchor="middle" class="t-mono">private bucket</text>
+
+          <line class="edge-accent" x1="800" y1="426" x2="800" y2="474" marker-end="url(#ha7-v5)" />
+          <line class="edge-accent" x1="840" y1="474" x2="840" y2="428" marker-end="url(#ha7-v5)" />
+          <text x="792" y="456" text-anchor="end" class="t-label t-accent">new upload</text>
+          <text x="848" y="456" class="t-label t-accent">resized</text>
+          <rect class="hl" x="730" y="476" width="180" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="820" y="500" text-anchor="middle" class="t-title">Image processor</text>
+          <text x="820" y="520" text-anchor="middle" class="t-mono">Lambda · webp sizes</text>
+
+          <line class="edge-accent" x1="720" y1="330" x2="720" y2="612" marker-end="url(#ha7-v5)" />
+
+          <!-- Shared Atlas cluster -->
+          <text x="40" y="596" class="t-label">shared platform</text>
+          <rect class="managed" x="40" y="614" width="880" height="84" rx="10" />
+          <text x="480" y="638" text-anchor="middle" class="t-title">MongoDB Atlas · one cluster</text>
+          <rect class="inner" x="60" y="650" width="400" height="34" rx="6" />
+          <text x="260" y="672" text-anchor="middle" class="t-mono" style="fill:var(--ink)">database app · REST team's DB user</text>
+          <rect class="hl" x="500" y="650" width="400" height="34" rx="6" />
+          <text x="700" y="672" text-anchor="middle" class="t-mono" style="fill:var(--ink)">database blog · blog team's DB user</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="716" width="26" height="12" rx="3" />
+          <text x="74" y="727" class="t-label">your servers</text>
+          <rect class="managed" x="190" y="716" width="26" height="12" rx="3" />
+          <text x="224" y="727" class="t-label">managed service</text>
+          <rect class="hl" x="370" y="716" width="26" height="12" rx="3" />
+          <text x="404" y="727" class="t-label">blog team, new or changed in v5</text>
+        </svg>
+      </div>
+      <figcaption>
+        Each team can deploy, scale and change its own column without asking the other. What
+        they share is kept deliberately small: the login, the edge, and the Atlas cluster, where each
+        team has its own database and its own database user. The blog Lambdas have no credentials
+        for Valkey "rest" or the <code>app</code> database, and the REST servers have none for the
+        blog's.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 2. Image uploads -->
+  <section>
+    <h2>How an image gets into a post</h2>
+    <p>
+      Image bytes never pass through AppSync or Lambda. AppSync requests are capped at a few
+      megabytes and Lambda payloads at 6 MB, and pushing files through them costs time and money.
+      Instead the Lambda hands the browser a short-lived, single-purpose upload link, and the
+      browser sends the file straight to S3.
+    </p>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 470" role="img" aria-label="Sequence: the client asks AppSync for an upload link and receives a presigned S3 URL valid for 5 minutes. It uploads the image directly to S3. S3 triggers the image processor, which writes resized webp versions back to S3. The client then creates the post with the image keys. Readers load images from CloudFront, which only goes to S3 on an edge cache miss.">
+          <defs>
+            <marker id="h8-v5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha8-v5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lane headers -->
+          <rect class="own" x="30" y="16" width="120" height="40" rx="8" />
+          <text x="90" y="41" text-anchor="middle" class="t-title">client</text>
+          <rect class="hl" x="200" y="16" width="200" height="40" rx="8" />
+          <text x="300" y="41" text-anchor="middle" class="t-title">AppSync + blog Lambda</text>
+          <rect class="hl" x="440" y="16" width="160" height="40" rx="8" />
+          <text x="520" y="41" text-anchor="middle" class="t-title">S3 blog-media</text>
+          <rect class="hl" x="640" y="16" width="160" height="40" rx="8" />
+          <text x="720" y="41" text-anchor="middle" class="t-title">image processor</text>
+          <rect class="managed" x="830" y="16" width="120" height="40" rx="8" />
+          <text x="890" y="41" text-anchor="middle" class="t-title">CloudFront</text>
+
+          <line x1="90" y1="56" x2="90" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="300" y1="56" x2="300" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="520" y1="56" x2="520" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="720" y1="56" x2="720" y2="452" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="890" y1="56" x2="890" y2="452" stroke="var(--line)" stroke-width="1.5" />
+
+          <!-- ① ② upload link -->
+          <line class="edge" x1="90" y1="90" x2="296" y2="90" marker-end="url(#h8-v5)" />
+          <text x="195" y="82" text-anchor="middle" class="t-label">① createImageUpload</text>
+          <line class="edge" x1="300" y1="124" x2="94" y2="124" marker-end="url(#h8-v5)" />
+          <text x="195" y="144" text-anchor="middle" class="t-label">② signed PUT URL · 5 min</text>
+          <text x="195" y="159" text-anchor="middle" class="t-label">image/* only · ≤ 10 MB</text>
+
+          <!-- ③ direct upload -->
+          <line class="edge-accent" x1="90" y1="190" x2="516" y2="190" marker-end="url(#ha8-v5)" />
+          <text x="305" y="182" text-anchor="middle" class="t-label t-accent">③ PUT image bytes straight to S3</text>
+          <text x="530" y="212" class="t-label">uploads/{postId}/{uuid}</text>
+
+          <!-- ④ ⑤ processing -->
+          <line class="edge" x1="520" y1="240" x2="716" y2="240" marker-end="url(#h8-v5)" />
+          <text x="620" y="232" text-anchor="middle" class="t-label">④ upload event</text>
+          <line class="edge" x1="720" y1="274" x2="524" y2="274" marker-end="url(#h8-v5)" />
+          <text x="620" y="294" text-anchor="middle" class="t-label">⑤ webp 400 · 800 · 1600</text>
+          <text x="620" y="309" text-anchor="middle" class="t-label">to media/</text>
+
+          <!-- ⑥ create post -->
+          <line class="edge" x1="90" y1="344" x2="296" y2="344" marker-end="url(#h8-v5)" />
+          <text x="195" y="336" text-anchor="middle" class="t-label">⑥ createPost { imageKeys }</text>
+          <text x="310" y="366" class="t-label">post stores keys, not bytes</text>
+
+          <!-- ⑦ reading -->
+          <line class="edge-accent" x1="90" y1="404" x2="886" y2="404" marker-end="url(#ha8-v5)" />
+          <text x="490" y="396" text-anchor="middle" class="t-label t-accent">⑦ readers load media.domain.com/… (cached at the edge)</text>
+          <line class="edge" x1="890" y1="436" x2="524" y2="436" marker-end="url(#h8-v5)" style="stroke-dasharray:5 4" />
+          <text x="707" y="430" text-anchor="middle" class="t-label">only on an edge cache miss</text>
+        </svg>
+      </div>
+      <figcaption>
+        The signed link allows exactly one upload, of one content type, up to a size limit, within
+        five minutes, to one key the server chose. The bucket itself stays private: readers can only
+        reach images through CloudFront (Origin Access Control), and resized files get
+        never-changing names, so CloudFront and browsers can cache them for a year.
+      </figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>S3 setting</th><th>Value</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Public access</td><td>Blocked</td><td>Only CloudFront (OAC) can read, only signed links can write</td></tr>
+          <tr><td><code>uploads/</code> lifecycle</td><td>Delete after 1 day</td><td>Originals from abandoned drafts don't pile up</td></tr>
+          <tr><td><code>media/</code> keys</td><td>Content-hashed names</td><td>Never overwritten, so they can be cached with <code>max-age=31536000, immutable</code></td></tr>
+          <tr><td>Processor failures</td><td>2 retries, then a dead-letter queue</td><td>A bad file doesn't block the rest; failures can be inspected and replayed</td></tr>
+          <tr><td>Post deleted</td><td>Delete its <code>media/{postId}/</code> prefix</td><td>No orphaned images</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Blog cache -->
+  <section>
+    <h2>What goes in Valkey "blog"</h2>
+    <p>
+      Because images live in S3, a cached post is only its text and metadata: a few kilobytes to a
+      few tens of kilobytes, even for long posts. Values are compressed before storing, and anything
+      above about 100 KB is better not cached at all, since large values slow every read of them.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Key</th><th>Holds</th><th>Typical size</th><th>Lifetime</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cache:post:{id}</code></td><td>Post text, title, tags, image keys (compressed JSON)</td><td>5–30 KB</td><td>10 min; deleted when the post is edited</td></tr>
+          <tr><td><code>cache:posts:latest:{page}</code></td><td>Summaries for the feed: title, excerpt, thumbnail key</td><td>~5 KB</td><td>60 s</td></tr>
+          <tr><td><code>ratelimit:{sub}:…</code></td><td>Per-user limits for GraphQL, same Lua scripts as REST</td><td>bytes</td><td>One window</td></tr>
+          <tr><td><code>counter:views:{id}</code></td><td>View count, <code>INCR</code> per read</td><td>bytes</td><td>No expiry; flushed to MongoDB every minute</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Eviction policy <code>volatile-lru</code>.</strong> When memory fills, Valkey only evicts
+      keys that have an expiry, oldest-used first. Cached posts go first and simply reload from
+      MongoDB; view counters have no expiry, so they are never dropped before they're saved.
+      Size the node so eviction is rare; the smallest node with a replica, or ElastiCache Serverless,
+      is enough to start.
+    </p>
+  </section>
+
+  <!-- 4. New failure cases -->
+  <section>
+    <h2>New ways things can fail</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Valkey "blog"</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Blog reads fall through to MongoDB (slower, more load); per-user GraphQL limits fall back to the WAF's per-IP rule. The REST API doesn't notice.</td>
+          </tr>
+          <tr>
+            <td>Valkey "rest"</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Only the REST API is affected, as in v1–v4. The blog doesn't notice.</td>
+          </tr>
+          <tr>
+            <td>Image processor</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>New images wait in <code>uploads/</code>; retries and the dead-letter queue catch up once it's fixed. Existing images and all text keep working.</td>
+          </tr>
+          <tr>
+            <td>S3 or CloudFront media</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>Posts load without images. Images already cached at the edge or in browsers still show.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. Work for this version -->
+  <section>
+    <h2>To build for v5</h2>
+    <div class="status">
+      <div class="planned">
+        <h3>Blog team</h3>
+        <ul>
+          <li>Valkey "blog" with <code>volatile-lru</code>, its own subnet and security group</li>
+          <li>Cache-aside for posts and the feed, deleted on edit</li>
+          <li>S3 <code>blog-media</code>: private, CloudFront OAC, lifecycle rule on <code>uploads/</code></li>
+          <li><code>createImageUpload</code> mutation returning a signed PUT URL</li>
+          <li>Image processor Lambda with retries and a dead-letter queue</li>
+        </ul>
+      </div>
+      <div class="planned">
+        <h3>Shared</h3>
+        <ul>
+          <li>Rate limit Lua scripts made cluster-safe with hash tags, so both teams can reuse them</li>
+          <li><code>media.domain.com</code> behavior in CloudFront pointing at the bucket</li>
+          <li>Separate Atlas database users per team</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </article>
+</main>
+<script>
+  (() => {
+    const ids = ["v1", "v2", "v3", "v4", "v5"];
+    const latest = "v5";
+    const cards = [...document.querySelectorAll('[data-show]')];
+    const views = [...document.querySelectorAll('article[data-version]')];
+    const show = (id) => {
+      if (!ids.includes(id)) id = latest;
+      views.forEach((a) => (a.hidden = a.dataset.version !== id));
+      cards.forEach((c) => c.setAttribute('aria-selected', String(c.dataset.show === id)));
+    };
+    cards.forEach((c) => c.addEventListener('click', () => {
+      show(c.dataset.show);
+      history.replaceState(null, '', '#' + c.dataset.show);
+    }));
+    window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+    show(location.hash.slice(1));
+  })();
+</script>
+</body>
+</html>

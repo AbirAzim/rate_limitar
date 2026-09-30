@@ -2,3 +2,5 @@ node_modules
 coverage
 .claude
 package-lock.json
+docs/architecture.html
+docs/architecture/

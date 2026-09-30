@@ -1,0 +1,368 @@
+
+  <header>
+    <span class="eyebrow">rate_limitar · production layout</span>
+    <h1>A second service, one login: the blog joins over GraphQL</h1>
+    <p class="lede">
+      The blog runs as its own service on AWS AppSync, next to the REST API, and reads and writes
+      its own database in the same MongoDB cluster. Users sign in once with Amazon Cognito, and the
+      same token works on the REST API and the blog; no service keeps its own passwords.
+    </p>
+    <p class="builds-on">
+      Builds on <a href="#v3">v3</a>. Everything not shown here is unchanged: the edge and
+      layered limits, the REST rate limiter and breaker, and MongoDB replication and failover.
+    </p>
+  </header>
+
+  <!-- 1. Topology -->
+  <section>
+    <h2>Two services side by side</h2>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 780" role="img" aria-label="The client logs in once with Cognito and gets a JWT. Every call goes through CloudFront and WAF, then either to the REST path (API gateway, load balancer, app servers A, B, C) or the GraphQL path (AppSync, then Lambda resolvers for the blog). Both paths reach Valkey and one MongoDB Atlas cluster over a private network; the REST API uses the app database and the blog uses its own blog database.">
+          <defs>
+            <marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Client -->
+          <rect class="own" x="380" y="14" width="200" height="48" rx="24" />
+          <text x="480" y="36" text-anchor="middle" class="t-title">Web / mobile client</text>
+          <text x="480" y="53" text-anchor="middle" class="t-mono">holds one JWT</text>
+
+          <!-- Cognito -->
+          <rect class="hl" x="40" y="10" width="240" height="56" rx="10" style="stroke-dasharray:6 4" />
+          <text x="160" y="34" text-anchor="middle" class="t-title">Amazon Cognito</text>
+          <text x="160" y="53" text-anchor="middle" class="t-mono">user pool · the only login</text>
+          <line class="edge-accent" x1="378" y1="30" x2="284" y2="30" marker-end="url(#ha)" />
+          <text x="331" y="22" text-anchor="middle" class="t-label t-accent">① log in</text>
+          <line class="edge-accent" x1="284" y1="50" x2="378" y2="50" marker-end="url(#ha)" />
+          <text x="331" y="68" text-anchor="middle" class="t-label t-accent">JWT</text>
+
+          <line class="edge" x1="480" y1="62" x2="480" y2="104" marker-end="url(#h)" />
+          <text x="490" y="88" class="t-label">② Bearer JWT on every call</text>
+
+          <!-- Edge -->
+          <rect class="managed" x="160" y="106" width="640" height="60" rx="10" />
+          <text x="480" y="131" text-anchor="middle" class="t-title">Edge · CloudFront + WAF</text>
+          <text x="480" y="152" text-anchor="middle" class="t-mono">TLS · caching · attack and rate rules</text>
+
+          <!-- Split -->
+          <line class="edge" x1="330" y1="166" x2="250" y2="216" marker-end="url(#h)" />
+          <text x="282" y="198" text-anchor="end" class="t-label">api.domain.com</text>
+          <line class="edge-accent" x1="630" y1="166" x2="710" y2="216" marker-end="url(#ha)" />
+          <text x="678" y="198" class="t-label t-accent">blog.domain.com/graphql</text>
+
+          <!-- REST path -->
+          <rect class="managed" x="60" y="218" width="380" height="64" rx="10" />
+          <text x="250" y="244" text-anchor="middle" class="t-title">API gateway (REST)</text>
+          <text x="250" y="265" text-anchor="middle" class="t-mono">JWT authorizer · coarse limits</text>
+          <line class="edge" x1="250" y1="282" x2="250" y2="326" marker-end="url(#h)" />
+          <rect class="managed" x="60" y="328" width="380" height="56" rx="10" />
+          <text x="250" y="352" text-anchor="middle" class="t-title">Load balancer</text>
+          <text x="250" y="372" text-anchor="middle" class="t-mono">weighted A=2 · B=1 · C=1</text>
+          <line class="edge" x1="250" y1="384" x2="250" y2="428" marker-end="url(#h)" />
+          <rect class="own" x="60" y="430" width="380" height="76" rx="10" />
+          <text x="250" y="456" text-anchor="middle" class="t-title">REST API · servers A, B, C</text>
+          <text x="250" y="476" text-anchor="middle" class="t-mono">Express (this repo) · verifies JWT</text>
+          <text x="250" y="494" text-anchor="middle" class="t-mono">rate limiter · users</text>
+
+          <!-- GraphQL path -->
+          <rect class="hl" x="520" y="218" width="380" height="64" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="244" text-anchor="middle" class="t-title">AWS AppSync (GraphQL)</text>
+          <text x="710" y="265" text-anchor="middle" class="t-mono">Cognito auth mode · WAF rate rule</text>
+          <line class="edge-accent" x1="710" y1="282" x2="710" y2="428" marker-end="url(#ha)" />
+          <text x="720" y="352" class="t-label t-accent">invokes resolver</text>
+          <text x="720" y="370" class="t-label t-accent">with identity.sub</text>
+          <rect class="hl" x="520" y="430" width="380" height="76" rx="10" style="stroke-dasharray:6 4" />
+          <text x="710" y="456" text-anchor="middle" class="t-title">Blog service · Lambda resolvers</text>
+          <text x="710" y="476" text-anchor="middle" class="t-mono">listPosts · createPost · addComment</text>
+          <text x="710" y="494" text-anchor="middle" class="t-mono">MongoDB driver, pooled connection</text>
+
+          <!-- Private network -->
+          <line class="edge" x1="250" y1="506" x2="250" y2="546" />
+          <line class="edge-accent" x1="710" y1="506" x2="710" y2="546" />
+          <line class="bus" x1="40" y1="550" x2="920" y2="550" />
+          <text x="920" y="572" text-anchor="end" class="t-label">private network (VPC, peered with Atlas)</text>
+
+          <line class="edge" x1="170" y1="554" x2="170" y2="604" marker-end="url(#h)" />
+          <line class="edge" x1="620" y1="554" x2="620" y2="604" marker-end="url(#h)" />
+
+          <!-- Valkey -->
+          <rect class="managed" x="40" y="606" width="260" height="110" rx="10" />
+          <text x="170" y="634" text-anchor="middle" class="t-title">Valkey (ElastiCache)</text>
+          <text x="170" y="656" text-anchor="middle" class="t-mono">ratelimit:* · cache:*</text>
+          <text x="170" y="676" text-anchor="middle" class="t-mono">primary + replica</text>
+
+          <!-- MongoDB, one cluster, two databases -->
+          <rect class="managed" x="340" y="606" width="580" height="110" rx="10" />
+          <text x="630" y="632" text-anchor="middle" class="t-title">MongoDB Atlas · one cluster (replica set)</text>
+          <rect class="inner" x="360" y="646" width="260" height="54" rx="6" />
+          <text x="376" y="668" class="t-title">database app</text>
+          <text x="376" y="688" class="t-mono">users · owned by REST API</text>
+          <rect class="hl" x="640" y="646" width="260" height="54" rx="6" />
+          <text x="656" y="668" class="t-title">database blog</text>
+          <text x="656" y="688" class="t-mono">posts · comments · blog only</text>
+
+          <!-- Legend -->
+          <rect class="own" x="40" y="742" width="26" height="12" rx="3" />
+          <text x="74" y="753" class="t-label">your servers</text>
+          <rect class="managed" x="190" y="742" width="26" height="12" rx="3" />
+          <text x="224" y="753" class="t-label">managed service</text>
+          <rect class="hl" x="370" y="742" width="26" height="12" rx="3" />
+          <text x="404" y="753" class="t-label">new in v4: login and blog path</text>
+        </svg>
+      </div>
+      <figcaption>
+        The client logs in once and sends the same token to both services. The REST path is
+        unchanged from v3. The blog path has no servers of your own: AppSync receives the GraphQL
+        request, checks the token itself, and calls a Lambda function that reads and writes the
+        <code>blog</code> database. Both services share the Atlas cluster and Valkey, but each owns
+        its own data.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 1a. Shared login -->
+  <section>
+    <h2>One login for every service</h2>
+    <p>
+      Cognito is the only place that knows passwords. It hands the client a signed token (JWT)
+      containing the user's id (<code>sub</code>), email and groups. Every service checks the
+      token's signature against Cognito's public keys, which they download once and cache, so
+      checking a token never calls Cognito and adds no network hop.
+    </p>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 960 440" role="img" aria-label="Sequence: the client signs in with Cognito and receives an ID token, access token and refresh token. It calls the REST API with the access token, which the API verifies with cached public keys. It calls AppSync with the same token, which AppSync validates natively and passes the user's id to the resolver. When the token expires the client uses the refresh token to get new ones from Cognito.">
+          <defs>
+            <marker id="h6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ha6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lane headers -->
+          <rect class="own" x="30" y="16" width="160" height="40" rx="8" />
+          <text x="110" y="41" text-anchor="middle" class="t-title">client</text>
+          <rect class="hl" x="250" y="16" width="160" height="40" rx="8" />
+          <text x="330" y="41" text-anchor="middle" class="t-title">Cognito</text>
+          <rect class="own" x="480" y="16" width="170" height="40" rx="8" />
+          <text x="565" y="41" text-anchor="middle" class="t-title">REST API</text>
+          <rect class="hl" x="740" y="16" width="190" height="40" rx="8" />
+          <text x="835" y="41" text-anchor="middle" class="t-title">AppSync + blog Lambda</text>
+
+          <line x1="110" y1="56" x2="110" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="330" y1="56" x2="330" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="565" y1="56" x2="565" y2="424" stroke="var(--line)" stroke-width="1.5" />
+          <line x1="835" y1="56" x2="835" y2="424" stroke="var(--line)" stroke-width="1.5" />
+
+          <!-- Sign in -->
+          <line class="edge-accent" x1="110" y1="88" x2="326" y2="88" marker-end="url(#ha6)" />
+          <text x="218" y="80" text-anchor="middle" class="t-label t-accent">① sign in</text>
+          <line class="edge-accent" x1="330" y1="120" x2="114" y2="120" marker-end="url(#ha6)" />
+          <text x="218" y="140" text-anchor="middle" class="t-label t-accent">② access + ID token (1 h),</text>
+          <text x="218" y="155" text-anchor="middle" class="t-label t-accent">refresh token (30 days)</text>
+
+          <!-- REST call -->
+          <line class="edge" x1="110" y1="190" x2="561" y2="190" marker-end="url(#h6)" />
+          <text x="336" y="182" text-anchor="middle" class="t-label">③ GET /api/v1/users/me · Bearer token</text>
+          <text x="577" y="214" class="t-label">verify signature</text>
+          <text x="577" y="230" class="t-label">with cached keys</text>
+          <line class="edge" x1="565" y1="248" x2="114" y2="248" marker-end="url(#h6)" />
+          <text x="336" y="240" text-anchor="middle" class="t-label">200 · profile of sub</text>
+
+          <!-- GraphQL call -->
+          <line class="edge-accent" x1="110" y1="290" x2="831" y2="290" marker-end="url(#ha6)" />
+          <text x="470" y="282" text-anchor="middle" class="t-label t-accent">④ query { myPosts } · the same token</text>
+          <text x="823" y="314" text-anchor="end" class="t-label t-accent">AppSync checks it,</text>
+          <text x="823" y="330" text-anchor="end" class="t-label t-accent">Lambda gets identity.sub</text>
+          <line class="edge-accent" x1="835" y1="348" x2="114" y2="348" marker-end="url(#ha6)" />
+          <text x="470" y="340" text-anchor="middle" class="t-label t-accent">posts where authorId = sub</text>
+
+          <!-- Refresh -->
+          <line class="edge" x1="110" y1="398" x2="326" y2="398" marker-end="url(#h6)" style="stroke-dasharray:5 4" />
+          <text x="218" y="390" text-anchor="middle" class="t-label">⑤ expired → refresh token</text>
+        </svg>
+      </div>
+      <figcaption>
+        Signing in happens once. From then on the client attaches the same access token to REST and
+        GraphQL calls, and quietly swaps it for a fresh one with the refresh token before it
+        expires. Logging out revokes the refresh token, so no new access tokens can be issued; an
+        access token already handed out stays valid until it expires, which is why it's kept short.
+      </figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Where</th><th>How it checks the token</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>API gateway (REST)</td><td>JWT authorizer pointed at the Cognito user pool; rejects bad tokens before they reach your servers</td></tr>
+          <tr><td>Express app (this repo)</td><td>Verifies again with <code>aws-jwt-verify</code> (keys cached in memory) and puts <code>req.user = { sub, email, groups }</code> on the request</td></tr>
+          <tr><td>AppSync</td><td>Cognito user pool auth mode, built in. Resolvers receive <code>identity.sub</code> and <code>identity.groups</code></td></tr>
+          <tr><td>Video service (later)</td><td>Same user pool, same token; nothing new to log into</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      With a real user id on every request, the app's rate limiter can key on <code>sub</code>
+      instead of IP for signed-in users, so one user can't dodge the limit by switching networks and
+      a shared office IP doesn't throttle everyone behind it.
+    </p>
+  </section>
+
+  <!-- 1b. Blog service -->
+  <section>
+    <h2>The blog service</h2>
+    <p>
+      The blog is its own service with its own code, deploys and database, even though it shares the
+      Atlas cluster for now. AppSync owns the GraphQL schema, auth and subscriptions; small Lambda
+      functions hold the logic and talk to MongoDB.
+    </p>
+    <figure>
+      <div class="canvas code">
+<pre><code>type Post {
+  id: ID!
+  title: String!
+  body: String!
+  authorId: ID!            # Cognito sub
+  authorName: String!      # copied at write time, no cross-database join
+  tags: [String!]!
+  createdAt: AWSDateTime!
+  comments(limit: Int, nextToken: String): CommentPage!
+}
+
+type Comment { id: ID!  postId: ID!  authorId: ID!  body: String!  createdAt: AWSDateTime! }
+
+type Query {
+  post(id: ID!): Post
+  posts(limit: Int, nextToken: String): PostPage!
+  myPosts(limit: Int, nextToken: String): PostPage!
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): Post!
+  updatePost(id: ID!, input: UpdatePostInput!): Post!     # author or admin only
+  deletePost(id: ID!): ID!                                # author or admin only
+  addComment(postId: ID!, body: String!): Comment!
+}
+
+type Subscription {
+  onComment(postId: ID!): Comment @aws_subscribe(mutations: ["addComment"])
+}</code></pre>
+      </div>
+      <figcaption>
+        Starting schema. <code>onComment</code> gives live comments over WebSockets with no extra
+        infrastructure: AppSync pushes every <code>addComment</code> to subscribed clients.
+      </figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Operation</th><th>Lambda</th><th>MongoDB (<code>blog</code> database)</th><th>Who may call it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>posts</code></td><td>listPosts</td><td><code>posts.find()</code> newest first, cursor paging</td><td>Any signed-in user</td></tr>
+          <tr><td><code>post</code></td><td>getPost</td><td><code>posts.findOne()</code> + first page of <code>comments</code></td><td>Any signed-in user</td></tr>
+          <tr><td><code>myPosts</code></td><td>listPosts</td><td><code>posts.find({ authorId: sub })</code></td><td>The signed-in user</td></tr>
+          <tr><td><code>createPost</code></td><td>createPost</td><td><code>posts.insertOne()</code>, <code>authorId</code> from the token, never from input</td><td>Any signed-in user</td></tr>
+          <tr><td><code>updatePost</code> / <code>deletePost</code></td><td>updatePost / deletePost</td><td>Filter includes <code>authorId: sub</code>, so others' posts can't match</td><td>Author, or group <code>admin</code></td></tr>
+          <tr><td><code>addComment</code></td><td>addComment</td><td><code>comments.insertOne()</code></td><td>Any signed-in user</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Decision</th><th>Choice</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Resolvers</td>
+            <td>Lambda with the MongoDB driver</td>
+            <td>AppSync has no built-in MongoDB data source (it has DynamoDB, Lambda, HTTP, OpenSearch, RDS), and Atlas's own Data API has been retired</td>
+          </tr>
+          <tr>
+            <td>Same database?</td>
+            <td>Same cluster, separate <code>blog</code> database</td>
+            <td>No extra cost now; splitting later means moving one database and changing one connection string, with no code rewrite</td>
+          </tr>
+          <tr>
+            <td>Data ownership</td>
+            <td>Blog only touches <code>blog</code></td>
+            <td>Its own Atlas database user with <code>readWrite</code> on <code>blog</code> only; it never reads or writes the REST API's <code>users</code> collection</td>
+          </tr>
+          <tr>
+            <td>Author details</td>
+            <td>Copy <code>authorName</code> onto the post</td>
+            <td>Avoids reaching into another service's data on every read; a name change can update old posts later through an event</td>
+          </tr>
+          <tr>
+            <td>Lambda ↔ Atlas connections</td>
+            <td>Client created outside the handler, <code>maxPoolSize</code> 1–5, reserved concurrency</td>
+            <td>Each Lambda instance holds its own pool; without a cap, a traffic spike can exhaust the cluster's connection limit</td>
+          </tr>
+          <tr>
+            <td>Network</td>
+            <td>Lambda in the VPC, Atlas on AWS in the same region, peering or PrivateLink</td>
+            <td>Database traffic never crosses the public internet, and latency stays low</td>
+          </tr>
+          <tr>
+            <td>Rate limiting</td>
+            <td>AWS WAF rate rule on AppSync; per-user limits in Lambda with the same Valkey if needed</td>
+            <td>GraphQL calls don't pass through the Express limiter, so the blog needs its own</td>
+          </tr>
+          <tr>
+            <td>Caching</td>
+            <td>AppSync's built-in cache for <code>posts</code> and <code>post</code>, a few minutes</td>
+            <td>Reads dominate on a blog; cached queries skip Lambda and MongoDB entirely</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 2. New failure cases -->
+  <section>
+    <h2>New ways things can fail</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Fails</th><th>App</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Cognito</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>New sign-ins and token refreshes fail. Tokens already issued keep working until they expire (up to 1 h), because services verify them with cached keys.</td>
+          </tr>
+          <tr>
+            <td>AppSync or blog Lambdas</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>The blog is down; the REST API is unaffected, and the reverse is also true. Separate services fail separately.</td>
+          </tr>
+          <tr>
+            <td>Atlas connection limit</td>
+            <td><span class="pill degraded">degraded</span></td>
+            <td>A Lambda spike opening too many connections can starve the REST API too, since they share the cluster. Capped with <code>maxPoolSize</code> and reserved concurrency.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. Work for this version -->
+  <section>
+    <h2>To build for v4</h2>
+    <div class="status">
+      <div class="planned">
+        <h3>Planned</h3>
+        <ul>
+          <li>Cognito user pool, and the JWT check in Express (<code>req.user</code>)</li>
+          <li>Blog: AppSync schema, Lambda resolvers, <code>blog</code> database and its own DB user</li>
+          <li>WAF rate rule on AppSync; per-user limits in the Lambdas if needed</li>
+          <li>Rate limit by user id when signed in, by IP otherwise</li>
+        </ul>
+      </div>
+    </div>
+  </section>
