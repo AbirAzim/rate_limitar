@@ -7,6 +7,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 # ---- runtime ----
 FROM node:22-alpine
 ENV NODE_ENV=production
+# Typically deployed behind one load balancer; override if different
+ENV TRUST_PROXY=1
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules

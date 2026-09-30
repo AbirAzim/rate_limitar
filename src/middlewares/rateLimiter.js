@@ -7,6 +7,7 @@ const rateLimiter = createRateLimiter({
   algorithm: config.rateLimit.algorithm,
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
+  ipv6Subnet: config.rateLimit.ipv6Subnet,
   onLimitReached: (req, res, next, { key, retryAfterSeconds }) => {
     logger.warn('Rate limit exceeded', { requestId: req.id, key, retryAfterSeconds });
     next(ApiError.tooManyRequests(`Too many requests, retry after ${retryAfterSeconds}s`));

@@ -33,7 +33,7 @@ src/
 ├── lib/rateLimiter/           # Hand-written rate limiter (no external package)
 │   ├── index.js                # createRateLimiter() middleware factory + algorithm registry
 │   └── algorithms/             # BaseAlgorithm, FixedWindow, SlidingWindowLog,
-│                               # SlidingWindowCounter, TokenBucket
+│                               # SlidingWindowCounter, TokenBucket, LeakyBucket
 ├── middlewares/              # requestId, requestLogger, validate, rateLimiter, notFound, errorHandler
 └── utils/                    # logger, ApiError, ApiResponse
 tests/                        # Integration tests against createApp()
@@ -65,12 +65,18 @@ Success response shape:
 
 Implemented from scratch in `src/lib/rateLimiter`. Pick the algorithm with `RATE_LIMIT_ALGORITHM`:
 
-| Algorithm                          | Accuracy                           | Memory / key | Notes                                     |
-| ---------------------------------- | ---------------------------------- | ------------ | ----------------------------------------- |
-| `fixed-window`                     | Up to 2x `max` at window boundary  | O(1)         | Simplest                                  |
-| `sliding-window-log`               | Exact                              | O(max)       | Stores every request timestamp            |
-| `sliding-window-counter` (default) | Close approximation                | O(1)         | Weighted previous + current window counts |
-| `token-bucket`                     | Exact average rate, bursts ≤ `max` | O(1)         | Refills `max / windowMs` tokens per ms    |
+| Algorithm                          | Accuracy                           | Memory / key | Notes                                               |
+| ---------------------------------- | ---------------------------------- | ------------ | --------------------------------------------------- |
+| `fixed-window`                     | Up to 2x `max` at window boundary  | O(1)         | Simplest                                            |
+| `sliding-window-log`               | Exact                              | O(max)       | Stores every request timestamp                      |
+| `sliding-window-counter` (default) | Close approximation                | O(1)         | Weighted previous + current window counts           |
+| `token-bucket`                     | Exact average rate, bursts ≤ `max` | O(1)         | Refills `max / windowMs` tokens per ms              |
+| `leaky-bucket`                     | Constant output rate, no bursts    | O(1)         | Queues up to `max`, delays each by `windowMs / max` |
+
+Limits are applied **per client IP** (`src/lib/rateLimiter/ipKey.js`): IPv4-mapped IPv6 is collapsed
+to IPv4, and IPv6 is grouped by `/64` (`RATE_LIMIT_IPV6_SUBNET`) so a user can't rotate addresses
+to reset their limit. Set `TRUST_PROXY` to the number of proxies in front of the app so `req.ip`
+is the real client IP and `X-Forwarded-For` can't be spoofed.
 
 Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `RateLimit-Policy`,
 and `Retry-After` on 429. State is in-memory per process; for multiple instances, back the

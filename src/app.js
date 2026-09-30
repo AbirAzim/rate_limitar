@@ -16,8 +16,8 @@ import apiRoutes from './routes/index.js';
 const createApp = () => {
   const app = express();
 
-  // Trust the first proxy (load balancer / reverse proxy) for correct req.ip
-  app.set('trust proxy', 1);
+  // Hop count of trusted reverse proxies, so req.ip is the real client IP
+  app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
 
   // Security & performance

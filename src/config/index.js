@@ -8,8 +8,18 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   RATE_LIMIT_ALGORITHM: z
-    .enum(['fixed-window', 'sliding-window-log', 'sliding-window-counter', 'token-bucket'])
+    .enum([
+      'fixed-window',
+      'sliding-window-log',
+      'sliding-window-counter',
+      'token-bucket',
+      'leaky-bucket',
+    ])
     .default('sliding-window-counter'),
+  RATE_LIMIT_IPV6_SUBNET: z.coerce.number().int().min(1).max(128).default(64),
+  // Number of reverse proxies in front of the app (0 = exposed directly).
+  // Must match your infra, otherwise clients can spoof X-Forwarded-For.
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
   RATE_LIMIT_WINDOW_MS: z.coerce
     .number()
     .int()
@@ -38,9 +48,11 @@ const config = Object.freeze({
   cors: {
     origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(',').map((o) => o.trim()),
   },
+  trustProxy: env.TRUST_PROXY,
   logLevel: env.LOG_LEVEL,
   rateLimit: {
     algorithm: env.RATE_LIMIT_ALGORITHM,
+    ipv6Subnet: env.RATE_LIMIT_IPV6_SUBNET,
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX,
   },
