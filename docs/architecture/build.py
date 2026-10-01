@@ -17,9 +17,9 @@ head = (here / 'head.html').read_text()
 latest = versions[-1]['id']
 
 NEXT = [
-    'Video service: reels uploaded to S3, transcoded, shared with friends',
+    'v7: video service, reels uploaded to S3, transcoded, shared with friends',
     'Rate limit store behind an interface; circuit breaker with in-memory fallback',
-    'Cluster-safe rate limit scripts (hash tags)',
+    'Rate limiter keyed on CloudFront-Viewer-Address and Cognito user id',
 ]
 
 EXTRA_CSS = """

@@ -55,5 +55,19 @@
       "What's cached, how big it gets, and the eviction policy",
       "Failure rows for each Valkey, the image processor and media delivery"
     ]
+  },
+  {
+    "id": "v6",
+    "name": "The whole system",
+    "date": "2026-09-30",
+    "summary": "Next.js on Amplify, Route 53 for every hostname, and every module from the edge to the database on one map, with the reason for each.",
+    "changes": [
+      "Next.js frontend on Amplify Hosting with server rendering",
+      "Route 53 hosted zone and ACM certificates for five hostnames",
+      "One page view traced end to end",
+      "Why each stack was chosen, and what was passed on",
+      "Network rules: VPC, VPC link, PrivateLink, security groups",
+      "Production, staging and preview environments"
+    ]
   }
 ]
